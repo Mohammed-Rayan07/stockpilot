@@ -13,15 +13,23 @@ import {
   uuid,
 } from 'drizzle-orm/pg-core';
 
-export const users = pgTable('users', {
-  id: uuid('id').primaryKey().defaultRandom(),
-  // Stored lowercased and trimmed by the registration service so the UNIQUE
-  // constraint is a true "one account per address" rule, not a case-sensitive one.
-  email: text('email').notNull().unique(),
-  passwordHash: text('password_hash').notNull(),
-  name: text('name').notNull(),
-  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
-});
+export const users = pgTable(
+  'users',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    email: text('email').notNull(),
+    passwordHash: text('password_hash').notNull(),
+    name: text('name').notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    // Functional index on lower(email) rather than a plain UNIQUE on the column. The
+    // service lowercases before inserting, but that is an application convention; this
+    // makes "one account per address, case-insensitively" a guarantee the database
+    // enforces even if some future code path forgets to normalise.
+    uniqueIndex('users_email_lower_uniq').on(sql`lower(${t.email})`),
+  ],
+);
 
 export const sessions = pgTable(
   'sessions',

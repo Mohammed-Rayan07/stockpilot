@@ -42,6 +42,10 @@ export async function registerUser(input: {
   }
 }
 
+// A fixed bcrypt hash at cost 12 of an arbitrary string. Only ever used to burn the same
+// amount of CPU as a real comparison.
+const DUMMY_HASH = '$2a$12$C6UzMDM.H6dfI/f/IKcEe.7Y1kQ0DkE4cS/PgFPPa2Yl0Uu.mSHKe';
+
 export async function authenticateUser(input: {
   email: string;
   password: string;
@@ -66,7 +70,3 @@ export async function authenticateUser(input: {
 
   return { userId: user.id };
 }
-
-// A fixed bcrypt hash at cost 12 of an arbitrary string. Only ever used to burn the same
-// amount of CPU as a real comparison.
-const DUMMY_HASH = '$2a$12$C6UzMDM.H6dfI/f/IKcEe.7Y1kQ0DkE4cS/PgFPPa2Yl0Uu.mSHKe';

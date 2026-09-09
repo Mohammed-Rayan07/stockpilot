@@ -1,6 +1,6 @@
 import { createHash, randomBytes } from 'node:crypto';
 import { cookies } from 'next/headers';
-import { and, eq, gt, lt } from 'drizzle-orm';
+import { eq } from 'drizzle-orm';
 import { db } from '../db';
 import { sessions, users } from '../db/schema';
 
@@ -82,12 +82,19 @@ export async function getSession(): Promise<SessionUser | null> {
     })
     .from(sessions)
     .innerJoin(users, eq(users.id, sessions.userId))
-    .where(and(eq(sessions.tokenHash, tokenHash), gt(sessions.expiresAt, new Date())));
+    .where(eq(sessions.tokenHash, tokenHash));
 
+  // No matching row means the cookie is forged, stale or from a deleted session. Return
+  // without writing: an unauthenticated request with a garbage cookie must not be able to
+  // make the server issue a DELETE, or every such request becomes a free write.
   if (!row) {
-    // Opportunistic cleanup: an expired token that is still being presented is a good
-    // moment to clear it out, which avoids needing a scheduled job.
-    await db.delete(sessions).where(and(eq(sessions.tokenHash, tokenHash), lt(sessions.expiresAt, new Date())));
+    return null;
+  }
+
+  if (row.expiresAt <= new Date()) {
+    // Opportunistic cleanup, and only here — the token did match a real row, it has just
+    // expired. Deleting it on presentation avoids needing a scheduled job.
+    await db.delete(sessions).where(eq(sessions.id, row.sessionId));
     return null;
   }
 

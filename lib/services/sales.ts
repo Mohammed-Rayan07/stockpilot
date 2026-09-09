@@ -56,10 +56,12 @@ export async function recordSale(
       const unitPriceMinor = toMinor(input.unitPrice ?? product.unitPrice);
       const newQuantity = product.quantity - input.quantity;
 
+      // Every write carries its tenant predicate so correctness never depends on the
+      // caller having scoped the read.
       await tx
         .update(products)
         .set({ quantity: newQuantity, updatedAt: new Date() })
-        .where(eq(products.id, product.id));
+        .where(and(eq(products.id, product.id), eq(products.userId, userId)));
 
       const [sale] = await tx
         .insert(sales)
@@ -144,10 +146,12 @@ export async function adjustStock(
       );
     }
 
+    // Every write carries its tenant predicate so correctness never depends on the
+    // caller having scoped the read.
     await tx
       .update(products)
       .set({ quantity: newQuantity, updatedAt: new Date() })
-      .where(eq(products.id, product.id));
+      .where(and(eq(products.id, product.id), eq(products.userId, userId)));
 
     const [movement] = await tx
       .insert(stockMovements)
