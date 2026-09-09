@@ -154,3 +154,81 @@ library substitution — §2 says shadcn/ui, and this is what shadcn/ui installs
   memory. Vercel runs many and recycles them, so an attacker spreading attempts across
   instances sees a much higher effective limit. Redis or Upstash is the correct
   production answer. Disclose this rather than let a reviewer find it.
+
+---
+
+## Phase 3 — Core domain
+
+### What was built
+
+- `lib/services/sales.ts` — `recordSale` (§6.1), `adjustStock` (§6.2), `listSales`.
+- `lib/services/products.ts` — `listProducts`, `getProduct`, `createProduct`,
+  `updateProduct`, `archiveProduct`.
+- `lib/services/suppliers.ts` — `listSuppliers`, `createSupplier`.
+- Routes: `GET|POST /api/products`, `PATCH|DELETE /api/products/[id]`,
+  `GET|POST /api/suppliers`, `GET|POST /api/sales`, `POST /api/stock/adjust`.
+- Products page (table, create/edit dialog, archive, stock-adjust dialog, supplier
+  dialog) and Sales page (log-a-sale form, sales history).
+- `tests/sale-transaction.test.ts` and `tests/tenant-isolation.test.ts`, plus
+  `vitest.config.ts`, `tests/setup.ts` and `tests/helpers.ts`.
+
+### Key decisions
+
+**Idempotency is handled outside `db.transaction()`, not inside it.** §6.1's prose says to
+catch `23505` from the sales insert and return the existing sale, but the moment that
+insert raises inside the transaction, Postgres marks the transaction aborted — every
+subsequent statement in it fails with "current transaction is aborted". A catch placed
+inside the callback therefore could not run the follow-up SELECT. The catch sits around
+the whole `db.transaction()` call, and the lookup runs on a fresh connection.
+
+**`adjustStock` lives in `lib/services/sales.ts` alongside `recordSale`.** §9 defines no
+`stock.ts`, and §4.2's invariant is that *exactly two* functions may write
+`products.quantity`. Keeping both in one file means that claim can be verified by reading
+a single file rather than trusting a grep.
+
+**`createProduct` writes an `initial` ledger row inside a transaction when opening stock
+is non-zero.** Creating a product with `quantity: 50` is a write to `products.quantity`.
+Without the matching ledger row, the §4.2 reconciliation query would report a mismatch on
+every newly created product. This is a third writer of `products.quantity` in the literal
+sense, but it writes the value at *insert* time rather than mutating an existing row; the
+invariant that matters — no change to quantity without a ledger row in the same
+transaction — holds.
+
+**Cross-tenant access returns `NOT_FOUND`, never `FORBIDDEN`.** A 403 confirms that the id
+exists, which turns every `/api/products/[id]` route into an existence oracle across
+tenants. Same reasoning as the generic registration error.
+
+**Supplier creation is a dialog on the products page, not a `/suppliers` route.** §9's
+file structure defines no suppliers page and §3.3 forbids adding features or restructuring
+folders, but Phase 3 asks for supplier CRUD with UI. A dialog satisfies both. The service
+layer implements only `listSuppliers` and `createSupplier`, which is exactly what §6.4
+lists — there is no supplier update or delete anywhere in the spec.
+
+**`listProducts` excludes archived products.** §8 has no `includeArchived` parameter and
+archiving is the app's stand-in for deletion, so an archived product should disappear from
+the working list. Its sales history is untouched.
+
+### What to understand before the interview
+
+- **The exact race `recordSale` prevents.** Two transactions read `quantity = 1` from
+  their own READ COMMITTED snapshots, both pass `1 >= 1`, both write `0`. One unit, two
+  sales. `SELECT ... FOR UPDATE` makes the second transaction block until the first
+  commits, after which it re-reads the *updated* row and fails correctly.
+- **Why the stock check sits after the lock and not before.** The check is only meaningful
+  against a value nobody else can change underneath you. Checking first and locking after
+  reintroduces exactly the window the lock exists to close.
+- **Why `CHECK (quantity >= 0)` is not redundant.** The lock is the primary defence and the
+  constraint is defence in depth: if the application logic were ever wrong, the database
+  still refuses to record negative stock. Name both, in that order.
+- **The alternatives, and why `FOR UPDATE` was chosen.** `SERIALIZABLE` isolation with a
+  retry loop on serialization failure, or an atomic conditional update
+  (`UPDATE ... SET quantity = quantity - $1 WHERE id = $2 AND quantity >= $1`, then check
+  the affected row count). Both are correct. `FOR UPDATE` was chosen because the intent is
+  explicit in the code and reads clearly in review.
+- **Why deadlock is impossible here.** Exactly one product row is locked per transaction.
+  Deadlock needs two transactions each holding a lock the other wants, which needs at
+  least two rows. If a future feature locked several rows, they would have to be locked in
+  a consistent order — ascending `id`.
+- **Why price and cost are copied onto the sale row.** Joining back to
+  `products.unit_price` for historical reporting would make last month's revenue change
+  when today's price changes. That is a correctness bug, not a shortcut.
