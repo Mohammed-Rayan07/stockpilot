@@ -14,3 +14,7 @@ yarn-error.log*
 *.tsbuildinfo
 next-env.d.ts
 coverage/
+
+# Source specification. Superseded by ARCHITECTURE.md; ignored so a local copy
+# cannot be re-committed.
+BUILD_SPEC.md
