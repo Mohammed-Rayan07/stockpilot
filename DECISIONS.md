@@ -82,3 +82,75 @@ and any non-`&` path); the fix is to rename the folder so it contains no `&`. Se
   the whole ledger, while the ledger preserves a full audit trail. The invariant that
   keeps them honest is that only two functions may write `products.quantity`, and both do
   it inside a transaction that also appends the matching ledger row.
+
+---
+
+## Phase 2 — Authentication
+
+### What was built
+
+- `lib/auth/password.ts` — bcrypt cost 12.
+- `lib/auth/session.ts` — token generation, sha256 hashing, cookie set/clear, `getSession`,
+  `destroySession`.
+- `lib/auth/guard.ts` — `requireSession()`, the real authorization boundary.
+- `lib/auth/origin.ts` — `requireSameOrigin()`, the second CSRF layer.
+- `lib/rate-limit.ts` — in-memory fixed-window counter, 10 attempts / 15 min per `ip:email`.
+- `lib/services/auth.ts` — `registerUser`, `authenticateUser`.
+- `lib/api.ts` — the §8.1 error envelope and Zod body/query parsing, in one place.
+- `lib/validation/schemas.ts` — every input schema, defined once.
+- `lib/client-api.ts` — browser fetch wrapper that unwraps the error envelope.
+- `POST /api/auth/register`, `/login`, `/logout`.
+- `middleware.ts` — cookie-presence redirect only, no database access.
+- Login and register pages, the `(app)` shell with sign-out, a placeholder dashboard.
+- shadcn/ui initialised; 10 primitives added.
+
+### Key decisions
+
+**Login hashes a dummy password when the email is unknown.** Without it, an unknown email
+returns in ~1ms and a known one in ~250ms, because only the known path runs bcrypt.
+§5.8 requires that failures be indistinguishable, and response time is part of the
+response. `DUMMY_HASH` is a fixed cost-12 hash used purely to burn the same CPU.
+
+**A missing `Origin` header is rejected, not allowed.** Browsers attach `Origin` to every
+request whose method is not GET/HEAD, including same-origin ones, so a legitimate
+mutation from the app always carries it. Treating "absent" as "trusted" is the standard
+way this check gets bypassed by a non-browser client.
+
+**`quantity` is deliberately absent from `updateProductSchema`.** Stock may only change
+through `recordSale` and `adjustStock`, which write the ledger in the same transaction.
+Allowing a generic product edit to set the quantity would break the §4.2 invariant
+silently, so the field is simply not accepted.
+
+**The rate-limit key is `ip:email`, not just `email`.** Keying on the email alone would let
+an attacker lock a victim out of their own account by burning the limit from anywhere.
+
+**The `(app)` layout calls `getSession()` and redirects rather than calling
+`requireSession()` and throwing.** A thrown error in a layout renders an error page; a
+signed-out visitor should see the login form. Route handlers and leaf pages still use
+`requireSession()`, which throws, because there the caller wants a 401.
+
+**shadcn's current registry (`base-nova`) is built on Base UI, not Radix.** Its `Button`
+takes a `render` prop rather than `asChild`, so links styled as buttons use
+`buttonVariants({...})` as a `className` on `next/link`. This is a CLI default, not a
+library substitution — §2 says shadcn/ui, and this is what shadcn/ui installs today.
+
+### What to understand before the interview
+
+- **Why the session token is sha256'd but the password is bcrypt'd.** The token is 256
+  bits of CSPRNG output and is not guessable, so a slow hash buys nothing and costs
+  latency on every request. Passwords are low-entropy and human-chosen, so slowness is
+  exactly the point.
+- **Why there is a session table rather than a stateless JWT.** A session row can be
+  deleted, which revokes access instantly. A JWT stays valid until it expires no matter
+  what happens server-side. For an app that mutates business data, revocability is worth
+  one indexed read per request.
+- **Why `middleware.ts` is not the security boundary.** It runs on the Edge runtime, which
+  has no Node APIs, so it cannot reach the pool driver. It checks only that a `sid`
+  cookie exists — a completely forged cookie passes it. Say this plainly; the two-layer
+  split is the point, not an oversight.
+- **Why registration returns "could not create account" on a duplicate email.** Saying
+  "that email is taken" turns the signup form into a membership oracle for any address.
+- **The honest limit of the rate limiter.** The `Map` lives in one serverless instance's
+  memory. Vercel runs many and recycles them, so an attacker spreading attempts across
+  instances sees a much higher effective limit. Redis or Upstash is the correct
+  production answer. Disclose this rather than let a reviewer find it.
