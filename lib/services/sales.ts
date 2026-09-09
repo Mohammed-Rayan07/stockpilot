@@ -16,24 +16,18 @@ export type RecordSaleInput = {
   idempotencyKey?: string;
 };
 
-/**
- * Records a sale and decrements stock atomically. The single most important function in
- * this codebase.
- *
- * The race it prevents: two customers buy the last unit at the same moment. Without a
- * lock, both transactions read `quantity = 1`, both pass the stock check, and both write
- * `quantity = 0` — one unit sold twice. That is a lost update, and Postgres's default
- * READ COMMITTED isolation does NOT prevent it, because each transaction reads from a
- * valid snapshot taken at statement start.
- *
- * `SELECT ... FOR UPDATE` takes a row-level exclusive lock. The second transaction blocks
- * until the first commits, then re-reads the UPDATED row and correctly fails with
- * InsufficientStockError. The CHECK (quantity >= 0) constraint is the backstop: even if
- * this logic were wrong, the database would refuse to go negative.
- *
- * Only one product row is locked per transaction, so deadlock is impossible here. If
- * multiple rows were ever locked they would have to be locked in a consistent order.
- */
+// Two customers buy the last unit at the same moment. Unlocked, both transactions read a
+// quantity of one, both pass the stock check, and both write zero: one unit sold twice.
+// That is a lost update.
+//
+// Postgres's default READ COMMITTED isolation does not prevent it. Each transaction reads
+// from a snapshot taken at statement start, so both genuinely observe one unit and neither
+// is doing anything the isolation level forbids.
+//
+// The row lock serialises them, which is why the stock check must come after it and never
+// before: a quantity read outside the lock can change before it is acted on, and that gap
+// is precisely the race the lock exists to close. The CHECK constraint forbidding negative
+// stock is the backstop, refusing an oversell even if this logic were wrong.
 export async function recordSale(
   userId: string,
   input: RecordSaleInput,

@@ -1,11 +1,16 @@
 import { eq } from 'drizzle-orm';
 import { db } from '../db';
 import { users } from '../db/schema';
-import { isUniqueViolation, ValidationError } from '../errors';
+import { isUniqueViolation, UnauthenticatedError, ValidationError } from '../errors';
 import { hashPassword, verifyPassword } from '../auth/password';
 
 // Deliberately identical for "no such account" and "wrong password". Differentiating
 // them turns the login form into an account-existence oracle.
+//
+// Raised as UnauthenticatedError (401), not ValidationError (422): the credentials are
+// well-formed, they just do not authenticate. 422 is reserved for input that failed Zod
+// validation, so the two cases stay distinguishable to a client without either of them
+// revealing which email addresses exist.
 const LOGIN_FAILED_MESSAGE = 'Email or password is incorrect.';
 
 function normaliseEmail(email: string): string {
@@ -50,13 +55,13 @@ export async function authenticateUser(input: {
     // email costs the same ~250ms as a known one. Without this, response time alone
     // reveals which addresses exist.
     await verifyPassword(input.password, DUMMY_HASH);
-    throw new ValidationError(LOGIN_FAILED_MESSAGE);
+    throw new UnauthenticatedError(LOGIN_FAILED_MESSAGE);
   }
 
   const valid = await verifyPassword(input.password, user.passwordHash);
 
   if (!valid) {
-    throw new ValidationError(LOGIN_FAILED_MESSAGE);
+    throw new UnauthenticatedError(LOGIN_FAILED_MESSAGE);
   }
 
   return { userId: user.id };
