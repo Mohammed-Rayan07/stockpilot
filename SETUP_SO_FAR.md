@@ -153,6 +153,22 @@ FROM products p LEFT JOIN stock_movements m ON m.product_id = p.id
 GROUP BY p.id, p.quantity HAVING p.quantity <> COALESCE(SUM(m.delta), 0);
 ```
 
+### If the tests fail on connect
+
+If `npm test` fails with a WebSocket constructor error rather than an assertion failure,
+open `lib/db/index.ts` and remove the `if (typeof globalThis.WebSocket === 'undefined')`
+guard, so the polyfill is always applied:
+
+```ts
+neonConfig.webSocketConstructor = ws;
+```
+
+The guard skips the polyfill on Node 24 because a global `WebSocket` exists there, but
+Neon's driver does not always accept it. **This is the fix — do not switch to
+`drizzle-orm/neon-http`.** That driver cannot hold a transaction open, so `db.transaction()`
+and `SELECT ... FOR UPDATE` would stop locking anything, silently, and test 1 would pass
+for the wrong reason.
+
 ### Cookie check (Phase 2 verification)
 
 In DevTools → Application → Cookies, the `sid` cookie must show **HttpOnly ✓** and

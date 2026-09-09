@@ -1,9 +1,7 @@
 import { and, asc, eq, ilike, or, sql } from 'drizzle-orm';
 import { db } from '../db';
 import { products, stockMovements, suppliers } from '../db/schema';
-import { NotFoundError, ValidationError } from '../errors';
-
-const POSTGRES_UNIQUE_VIOLATION = '23505';
+import { isUniqueViolation, NotFoundError, ValidationError } from '../errors';
 
 // Every function here takes userId first and puts it in the WHERE clause. That predicate
 // IS the tenant boundary: there is no row-level security in the database, so a query that
@@ -206,13 +204,4 @@ async function assertSupplierBelongsToUser(userId: string, supplierId: string) {
       fields: { supplierId: 'Unknown supplier.' },
     });
   }
-}
-
-function isUniqueViolation(error: unknown): boolean {
-  return (
-    typeof error === 'object' &&
-    error !== null &&
-    'code' in error &&
-    (error as { code?: unknown }).code === POSTGRES_UNIQUE_VIOLATION
-  );
 }

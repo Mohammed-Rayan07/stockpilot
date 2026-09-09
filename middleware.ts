@@ -34,10 +34,11 @@ export function middleware(request: NextRequest) {
     return NextResponse.redirect(loginUrl);
   }
 
-  if ((pathname === '/login' || pathname === '/register') && hasCookie) {
-    return NextResponse.redirect(new URL('/dashboard', request.url));
-  }
-
+  // There is deliberately no "has cookie -> bounce off /login" branch. Because this layer
+  // cannot tell a valid cookie from a stale one, a present-but-revoked session would
+  // ping-pong forever: /dashboard passes here, the (app) layout resolves no session and
+  // redirects to /login, and this would send it straight back. Deleting a session row
+  // while signed in — which the seed script does — is enough to trigger it.
   return NextResponse.next();
 }
 
@@ -49,7 +50,5 @@ export const config = {
     '/reorder/:path*',
     '/purchase-orders/:path*',
     '/assistant/:path*',
-    '/login',
-    '/register',
   ],
 };

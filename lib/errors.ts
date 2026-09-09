@@ -67,3 +67,33 @@ export class RateLimitedError extends AppError {
     super('RATE_LIMITED', 429, message);
   }
 }
+
+/** Postgres unique-violation SQLSTATE. */
+export const POSTGRES_UNIQUE_VIOLATION = '23505';
+
+/**
+ * Pulls the Postgres SQLSTATE out of a thrown error.
+ *
+ * Drizzle wraps driver errors in DrizzleQueryError and hangs the original pg error off
+ * `.cause` (see drizzle-orm/pg-core/session.js), so reading `error.code` directly finds
+ * nothing and every constraint check silently returns false. Both shapes are checked
+ * rather than depending on the Drizzle version.
+ */
+export function pgErrorCode(error: unknown): string | undefined {
+  const candidates = [error, (error as { cause?: unknown } | null)?.cause];
+
+  for (const candidate of candidates) {
+    if (typeof candidate === 'object' && candidate !== null && 'code' in candidate) {
+      const code = (candidate as { code?: unknown }).code;
+      if (typeof code === 'string') {
+        return code;
+      }
+    }
+  }
+
+  return undefined;
+}
+
+export function isUniqueViolation(error: unknown): boolean {
+  return pgErrorCode(error) === POSTGRES_UNIQUE_VIOLATION;
+}

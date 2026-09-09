@@ -1,10 +1,13 @@
 import { and, desc, eq, gte, lte, sql } from 'drizzle-orm';
 import { db } from '../db';
 import { products, sales, stockMovements, type StockMovementActor } from '../db/schema';
-import { InsufficientStockError, NotFoundError, ValidationError } from '../errors';
+import {
+  InsufficientStockError,
+  isUniqueViolation,
+  NotFoundError,
+  ValidationError,
+} from '../errors';
 import { toMajor, toMinor } from '../money';
-
-const POSTGRES_UNIQUE_VIOLATION = '23505';
 
 export type RecordSaleInput = {
   productId: string;
@@ -210,13 +213,4 @@ export async function listSales(
     .where(where);
 
   return { sales: rows, total: count, page: opts.page, limit: opts.limit };
-}
-
-function isUniqueViolation(error: unknown): boolean {
-  return (
-    typeof error === 'object' &&
-    error !== null &&
-    'code' in error &&
-    (error as { code?: unknown }).code === POSTGRES_UNIQUE_VIOLATION
-  );
 }

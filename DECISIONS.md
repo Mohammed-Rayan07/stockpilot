@@ -42,9 +42,11 @@ which cascaded deletes fire, so the cascade could hit the RESTRICT and abort. Ex
 ordering is the only version certain to succeed. This is what makes the seed idempotent:
 re-running rebuilds the dataset rather than appending to it.
 
-**The seed uses a seeded LCG, not `Math.random`.** Re-runs must produce identical data,
-otherwise the hand-computed analytics figures that Phase 4 verifies against would drift
-between runs.
+**The seed uses a seeded LCG, not `Math.random`.** Re-runs produce identical quantities,
+prices and per-sale unit counts, so the hand-computed analytics figures Phase 4 verifies
+against stay stable. Timestamps are the exception: `soldAt` is derived from `Date.now()`
+minus a fixed day offset, so the absolute dates shift with each run while their spacing
+does not. Revenue-over-time buckets therefore move between runs; totals do not.
 
 **The seed derives opening stock as `finalQuantity + unitsSold`.** Quantities are planned
 backwards from the desired end state so that `products.quantity` and the
@@ -232,3 +234,30 @@ the working list. Its sales history is untouched.
 - **Why price and cost are copied onto the sale row.** Joining back to
   `products.unit_price` for historical reporting would make last month's revenue change
   when today's price changes. That is a correctness bug, not a shortcut.
+
+### Phase 3 review fixes
+
+Three defects found in review after the Phase 3 commit, all of which typecheck and build
+cleanly and so could not have been caught without reading the library source:
+
+**1. `error.code === '23505'` never matched.** Drizzle wraps every driver error in
+`DrizzleQueryError` and hangs the original pg error off `.cause`
+(`drizzle-orm/pg-core/session.js:41`). Reading `error.code` on the thrown object therefore
+found nothing, and all three unique-violation checks silently returned `false`. The
+consequences were real spec violations: a duplicate registration email would have returned
+`INTERNAL 500` instead of the generic 422 §5.1 requires, and a double-clicked sale would
+have returned 500 instead of the original sale. `pgErrorCode` in `lib/errors.ts` now
+unwraps one level of `.cause` and checks both shapes, and the three duplicated local
+helpers were replaced by one shared `isUniqueViolation`.
+
+**2. Middleware could produce an infinite redirect loop.** The original
+"has cookie → redirect off `/login`" branch fought the `(app)` layout: with a cookie
+present but its session row gone, `/dashboard` passed middleware, the layout resolved no
+session and redirected to `/login`, and middleware sent it straight back. Re-running the
+seed while signed in as the demo user is enough to trigger it. The branch is removed,
+which also aligns middleware with §5.4, where its only stated job is redirecting
+unauthenticated users away from `/(app)` routes.
+
+**3. `ws` was a devDependency but is imported by `lib/db/index.ts`.** Moved to
+`dependencies`, since it is a runtime import on any host whose global `WebSocket` is
+absent.

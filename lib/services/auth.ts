@@ -1,10 +1,8 @@
 import { eq } from 'drizzle-orm';
 import { db } from '../db';
 import { users } from '../db/schema';
-import { ValidationError } from '../errors';
+import { isUniqueViolation, ValidationError } from '../errors';
 import { hashPassword, verifyPassword } from '../auth/password';
-
-const POSTGRES_UNIQUE_VIOLATION = '23505';
 
 // Deliberately identical for "no such account" and "wrong password". Differentiating
 // them turns the login form into an account-existence oracle.
@@ -67,12 +65,3 @@ export async function authenticateUser(input: {
 // A fixed bcrypt hash at cost 12 of an arbitrary string. Only ever used to burn the same
 // amount of CPU as a real comparison.
 const DUMMY_HASH = '$2a$12$C6UzMDM.H6dfI/f/IKcEe.7Y1kQ0DkE4cS/PgFPPa2Yl0Uu.mSHKe';
-
-function isUniqueViolation(error: unknown): boolean {
-  return (
-    typeof error === 'object' &&
-    error !== null &&
-    'code' in error &&
-    (error as { code?: unknown }).code === POSTGRES_UNIQUE_VIOLATION
-  );
-}
