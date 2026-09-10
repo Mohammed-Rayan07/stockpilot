@@ -10,7 +10,7 @@
     "typecheck": "tsc --noEmit",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
-    "db:seed": "tsx lib/db/seed.ts",
+    "db:seed": "tsx -r dotenv/config lib/db/seed.ts",
     "test": "vitest run"
   },
   "dependencies": {
