@@ -261,3 +261,72 @@ unauthenticated users away from `/(app)` routes.
 **3. `ws` was a devDependency but is imported by `lib/db/index.ts`.** Moved to
 `dependencies`, since it is a runtime import on any host whose global `WebSocket` is
 absent.
+
+---
+
+## Phase 4 — Analytics
+
+### What was built
+
+- `lib/services/analytics.ts` — `getDashboardMetrics` (revenue, units, margin,
+  revenue-over-time, top products by units and by revenue) and `getInventoryHealth`
+  (stock value at cost, counts by health band).
+- `lib/services/reorder.ts` — `getReorderAdvice` per §6.3, plus a pure
+  `calculateReorderAdvice` the formula lives in so it can be unit-tested without a live
+  sales fixture for every edge case.
+- Routes: `GET /api/analytics/dashboard`, `GET /api/analytics/reorder-advice`.
+- Dashboard page: 4 KPI cards, a Recharts revenue-over-time line chart, a top-products bar
+  chart, and a low-stock table — each with a real empty state and a `loading.tsx` skeleton.
+- `tests/reorder-math.test.ts`.
+- Installed `recharts` and `@google/genai` (the latter used starting Phase 5).
+
+### Key decisions
+
+**Revenue-over-time buckets on IST calendar days, not UTC.** `date_trunc('day', sold_at AT
+TIME ZONE 'Asia/Kolkata')` in SQL, and the day-key array on the app side built with
+`Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata' })`. `date_trunc` on a bare
+`timestamptz` buckets on the server's UTC day; a sale at 1am IST would land in the
+previous day's bucket and the chart would be quietly wrong for exactly the hours a small
+business is open early or late.
+
+**All dashboard money aggregates are summed in Postgres `numeric`, not JS.**
+`SUM(total_amount) - SUM(quantity * unit_cost)` for margin, `SUM(quantity * cost_price)`
+for stock value — both stay `numeric` through the whole SQL expression and the driver
+returns a string, exactly like every other money value in this codebase. §2.2's rule
+against float arithmetic on money applies to aggregates as much as to a single price.
+
+**`getReorderAdvice` returns only products at or below their own reorder threshold**, not
+every product with a computed (and mostly irrelevant) suggestion. §3.2 describes the
+Reorder Advisor as showing exactly that set, and the dashboard's low-stock table reuses
+this same function's output rather than a second hand-rolled query — one function backs
+both call sites.
+
+**`get_low_stock` and `get_reorder_advice` (§7.3) will both be backed by
+`getReorderAdvice`.** The AI tool table lists them as separate tools with different
+"Returns" columns, but the underlying data and filter (at/below threshold) are identical;
+`get_low_stock`'s handler will just project a smaller shape from the same result. Two
+functions computing the same set independently is how they'd eventually disagree.
+
+**`getDashboardMetrics` will also back the `get_sales_summary` AI tool** rather than a
+separate service function. §6.4's "remaining services" list has no `getSalesSummary`, and
+`get_sales_summary`'s required shape (revenue, units, margin, top products) is a subset of
+what the dashboard already computes. The tool's handler must project down to only that
+subset before it reaches the model — a full daily series is token cost with no benefit,
+and less surface for injected product-name text (§7.6) to ride along on.
+
+**Health bands are relative to each product's own `reorder_threshold`, not a fixed
+number.** `out_of_stock` (quantity 0), `low` (0 < quantity ≤ its threshold), `healthy`
+(above it). A fixed cutoff like "under 10 units" would call a product with a
+threshold of 50 healthy at 20 units, which is backwards.
+
+### What to understand before the interview
+
+- **Why revenue-over-time is bucketed in IST and not UTC.** The business, its users, and
+  its "today" are all IST. Bucketing on the server's UTC day is the kind of bug that never
+  shows up in testing during the day and quietly misattributes late-night sales to the
+  wrong day in the chart.
+- **Why the low-stock table and the Reorder Advisor page (Phase 6) will share one query.**
+  Both need "products at or below their reorder point." Computing that twice is exactly
+  the kind of duplicated logic that drifts — the general reason §6 requires the AI tool
+  layer and the REST API to call the same service functions, applied here to two UI
+  surfaces instead.
