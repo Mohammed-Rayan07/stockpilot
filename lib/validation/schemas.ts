@@ -91,3 +91,19 @@ export const dashboardQuerySchema = z.object({
 export const reorderAdviceQuerySchema = z.object({
   safetyDays: z.coerce.number().int().min(0).max(90).optional(),
 });
+
+// The `history` array is an opaque round-trip value: the client only ever resends what
+// POST /api/ai/chat previously returned, so this checks shape (a Gemini Content[]), not
+// exact contents.
+export const aiChatSchema = z.object({
+  message: z.string().trim().min(1, 'Message is required.').max(2000, 'Message is too long.'),
+  history: z
+    .array(
+      z.object({
+        role: z.string().optional(),
+        parts: z.array(z.record(z.string(), z.unknown())).optional(),
+      }),
+    )
+    .max(200)
+    .optional(),
+});

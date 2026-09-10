@@ -41,6 +41,13 @@ export function checkRateLimit(key: string, limit: number, windowMs: number): Ra
 
 export const LOGIN_RATE_LIMIT = { limit: 10, windowMs: 15 * 60 * 1000 };
 
+// §7.8: 20 assistant messages per user per hour.
+export const AI_CHAT_RATE_LIMIT = { limit: 20, windowMs: 60 * 60 * 1000 };
+
+export function aiChatRateLimitKey(userId: string): string {
+  return `ai-chat:${userId}`;
+}
+
 /**
  * Keyed on IP *and* email so that one attacker cannot lock out a victim's account by
  * burning the limit against their address from elsewhere.
