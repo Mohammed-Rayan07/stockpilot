@@ -429,3 +429,73 @@ same endpoint returned.
   places for that logic to quietly diverge. One function, two callers, is the same
   argument §6 makes for the REST API and the AI tool layer sharing service functions in
   the first place — applied one level down, to tools sharing functions with each other.
+
+---
+
+## Phase 6 — Innovation + ship
+
+### What was built
+
+- `app/(app)/reorder/page.tsx` + `components/reorder/reorder-table.tsx` — the Reorder
+  Advisor UI: every at/below-threshold product with velocity, days of cover, lead time,
+  suggested quantity, and the four assumptions on screen, plus select-and-draft grouped by
+  supplier.
+- `lib/services/purchase-orders.ts` extended with the AI email draft,
+  `listPurchaseOrders`, `updatePurchaseOrder`.
+- Routes: `GET/POST /api/purchase-orders`, `PATCH /api/purchase-orders/[id]`.
+- `components/purchase-orders/purchase-order-list.tsx` + page — list, line detail, editable
+  email draft, mark sent/cancelled.
+- `README.md`, all eleven §13 sections.
+
+### Key decisions
+
+**The AI email-drafting call passes no `tools:` array and is not routed through
+`lib/ai/executor.ts`.** It only ever produces prose stored in `purchase_orders.email_draft`
+for a human to review and edit before the (human) sends it themselves — the app never
+sends email (§3.2, explicitly out of scope). Handing this call the tool registry would
+create a second code path from model output to the database, which is exactly what §7.1
+rule 3 ("one executor") forbids. A generation call with no tools has nowhere to cause a
+write, so it does not need the executor's pipeline.
+
+**`thinkingConfig: { thinkingBudget: 0 }` on the email-drafting call, found by testing
+against the live API, not assumed.** The first live draft came back truncated to a single
+greeting line under `maxOutputTokens: 400` — Gemini 2.5 Flash's extended thinking consumes
+part of that budget before any visible text is emitted, and for a short, non-reasoning
+task like a business email, thinking bought nothing while quietly eating the output. This
+is scoped to this one call: the chat assistant's `maxOutputTokens: 1024` in
+`lib/ai/executor.ts` is §7.2's explicit value and was left untouched, since thinking is
+plausibly useful there for tool selection across a 5-round loop, and the spec does not
+authorize changing that number.
+
+**A purchase order's `status` only ever moves one way out of `'draft'`, and only
+`emailDraft` and `status` are editable — never the lines or the total.** A sent or
+cancelled PO is a historical record of what was actually ordered, at what cost, at that
+time — the same reasoning §4's schema notes give for snapshotting sale price and cost
+rather than joining back to `products`. Letting a "draft" edit silently rewrite quantities
+after the fact would make that record unreliable.
+
+**Items with no supplier cannot be selected on the Reorder Advisor page**, rather than
+being selectable and failing on submit. `createPurchaseOrderDraft` requires a
+`supplierId`; a product with `supplier_id IS NULL` has nowhere for an order to go, and the
+UI says so on the row instead of letting the user discover it from a 404 after clicking
+Draft.
+
+### What to understand before the interview
+
+- **Why the PO email generation is architecturally separate from the chat assistant**,
+  despite both calling the same Gemini client. One is inside the executor's allowlist/
+  validate/authorize/log pipeline and can request tool calls that read or propose writes;
+  the other is a single bounded prompt-to-string call with no tools, invoked directly by a
+  service function, that cannot request anything. Two different trust levels for two
+  different jobs, not an inconsistency.
+- **Why disabling thinking for the email call was a testing finding, not a guess.** The
+  first version used `maxOutputTokens: 400` with thinking enabled by default and produced
+  a truncated email in the live response — caught by actually reading what came back, not
+  by assuming a reasonable-sounding token budget would work. Say this if asked how bugs
+  were caught during the build: by running the real thing against the real API and
+  reading the real output, not by code review alone.
+- **Why POs don't support editing line quantities after creation.** The moment a line is
+  drafted it is a record of what was proposed to a supplier at a specific cost; changing
+  it later would be indistinguishable from rewriting history. Cancel and re-draft is the
+  correct path for "I ordered the wrong quantity," the same way sales are never edited,
+  only ever followed by a new movement.
