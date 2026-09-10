@@ -92,6 +92,18 @@ export const reorderAdviceQuerySchema = z.object({
   safetyDays: z.coerce.number().int().min(0).max(90).optional(),
 });
 
+export const createPurchaseOrderSchema = z.object({
+  supplierId: z.uuid(),
+  lines: z
+    .array(z.object({ productId: z.uuid(), quantity: z.number().int().positive() }))
+    .min(1, 'A purchase order needs at least one line.'),
+});
+
+export const updatePurchaseOrderSchema = z.object({
+  status: z.enum(['sent', 'cancelled']).optional(),
+  emailDraft: z.string().trim().max(5000).optional(),
+});
+
 // The `history` array is an opaque round-trip value: the client only ever resends what
 // POST /api/ai/chat previously returned, so this checks shape (a Gemini Content[]), not
 // exact contents.
