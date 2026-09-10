@@ -58,6 +58,14 @@ test('two concurrent sales of the last unit: one succeeds, one fails', async () 
 test('insufficient stock leaves quantity unchanged and writes nothing', async () => {
   const product = await createTestProduct(userId, { quantity: 3 });
 
+  // createTestProduct itself writes one "initial" movement for the opening stock (the
+  // §4.2 invariant applies to product creation too) -- the baseline here accounts for
+  // that so this test only asserts the *failed sale* wrote nothing new.
+  const before = await db
+    .select()
+    .from(stockMovements)
+    .where(eq(stockMovements.productId, product.id));
+
   await expect(recordSale(userId, { productId: product.id, quantity: 5 })).rejects.toBeInstanceOf(
     InsufficientStockError,
   );
@@ -72,7 +80,7 @@ test('insufficient stock leaves quantity unchanged and writes nothing', async ()
     .select()
     .from(stockMovements)
     .where(eq(stockMovements.productId, product.id));
-  expect(movements).toHaveLength(0);
+  expect(movements).toHaveLength(before.length);
 });
 
 test('a repeated idempotency key returns the original sale rather than selling twice', async () => {

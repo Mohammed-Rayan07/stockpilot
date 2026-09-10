@@ -11,6 +11,7 @@ import {
   suppliers,
   users,
 } from '@/lib/db/schema';
+import { createProduct } from '@/lib/services/products';
 
 /** Creates a throwaway user. Each test gets its own so tests cannot interfere. */
 export async function createTestUser(label: string) {
@@ -30,20 +31,16 @@ export async function createTestProduct(
   userId: string,
   overrides: { quantity?: number; unitPrice?: string; costPrice?: string; sku?: string } = {},
 ) {
-  const [product] = await db
-    .insert(products)
-    .values({
-      userId,
-      name: 'Test Widget',
-      sku: overrides.sku ?? `SKU-${randomUUID().slice(0, 8)}`,
-      unitPrice: overrides.unitPrice ?? '100.00',
-      costPrice: overrides.costPrice ?? '40.00',
-      quantity: overrides.quantity ?? 0,
-      reorderThreshold: 5,
-    })
-    .returning();
-
-  return product;
+  // Goes through the real createProduct service, not a raw insert, so opening stock gets
+  // its matching "initial" stock_movements row -- the same §4.2 invariant production relies on.
+  return createProduct(userId, {
+    name: 'Test Widget',
+    sku: overrides.sku ?? `SKU-${randomUUID().slice(0, 8)}`,
+    unitPrice: overrides.unitPrice ?? '100.00',
+    costPrice: overrides.costPrice ?? '40.00',
+    quantity: overrides.quantity ?? 0,
+    reorderThreshold: 5,
+  });
 }
 
 /** Child tables first: sales and stock_movements reference products with RESTRICT. */
