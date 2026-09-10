@@ -1,21 +1,60 @@
+import { KpiCards } from '@/components/analytics/kpi-cards';
+import { LowStockTable } from '@/components/analytics/low-stock-table';
+import { RevenueChart } from '@/components/analytics/revenue-chart';
+import { TopProductsChart } from '@/components/analytics/top-products-chart';
 import { requireSession } from '@/lib/auth/guard';
+import { getDashboardMetrics } from '@/lib/services/analytics';
+import { getReorderAdvice } from '@/lib/services/reorder';
 
 export const runtime = 'nodejs';
 
 export const metadata = { title: 'Dashboard · StockPilot' };
 
-// Placeholder until Phase 4 builds the analytics. It exists now so that Phase 2's
-// verification — /dashboard unreachable when signed out — has something to protect.
 export default async function DashboardPage() {
   const session = await requireSession();
 
+  // Reads may call services directly from a Server Component (§6); the low-stock table
+  // reuses the same reorder-advice query the Reorder Advisor page runs, rather than a
+  // second hand-rolled "products below threshold" query.
+  const [metrics, advice] = await Promise.all([
+    getDashboardMetrics(session.userId),
+    getReorderAdvice(session.userId),
+  ]);
+
+  const skusBelowReorder = metrics.inventoryHealth.bands.low + metrics.inventoryHealth.bands.out_of_stock;
+
   return (
-    <div className="space-y-2">
-      <h1 className="text-2xl font-semibold tracking-tight">Dashboard</h1>
-      <p className="text-muted-foreground">
-        Signed in as {session.name} ({session.email}).
-      </p>
-      <p className="text-muted-foreground">Analytics arrive in Phase 4.</p>
+    <div className="space-y-6">
+      <div>
+        <h1 className="text-2xl font-semibold tracking-tight">Dashboard</h1>
+        <p className="text-muted-foreground text-sm">
+          Welcome back, {session.name}. Figures cover the last {metrics.days} days.
+        </p>
+      </div>
+
+      <KpiCards
+        revenue={metrics.revenue}
+        units={metrics.units}
+        stockValueAtCost={metrics.inventoryHealth.stockValueAtCost}
+        skusBelowReorder={skusBelowReorder}
+      />
+
+      <RevenueChart data={metrics.revenueOverTime} />
+
+      <TopProductsChart
+        data={metrics.topProductsByUnits.map((p) => ({ name: p.name, units: p.units }))}
+      />
+
+      <LowStockTable
+        rows={advice.items.map((item) => ({
+          productId: item.productId,
+          name: item.name,
+          sku: item.sku,
+          quantity: item.quantity,
+          reorderThreshold: item.reorderThreshold,
+          daysOfCover: item.daysOfCover,
+        }))}
+      />
     </div>
   );
 }

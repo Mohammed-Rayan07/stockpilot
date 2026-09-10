@@ -10,6 +10,9 @@ const LINKS = [
   { href: '/dashboard', label: 'Dashboard' },
   { href: '/products', label: 'Products' },
   { href: '/sales', label: 'Sales' },
+  { href: '/reorder', label: 'Reorder' },
+  { href: '/purchase-orders', label: 'Purchase orders' },
+  { href: '/assistant', label: 'Assistant' },
 ];
 
 export function AppNav({ userName }: { userName: string }) {
