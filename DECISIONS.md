@@ -330,3 +330,102 @@ threshold of 50 healthy at 20 units, which is backwards.
   the kind of duplicated logic that drifts — the general reason §6 requires the AI tool
   layer and the REST API to call the same service functions, applied here to two UI
   surfaces instead.
+
+---
+
+## Phase 5 — AI assistant
+
+### What was built
+
+- `lib/ai/client.ts`, `lib/ai/prompt.ts`, `lib/ai/tools.ts` (§7.3's 9-tool registry, hand-
+  written JSON Schema per tool), `lib/ai/executor.ts` (§7.4).
+- `lib/services/purchase-orders.ts` — `createPurchaseOrderDraft` only; see below.
+- Routes: `POST /api/ai/chat`, `POST /api/ai/actions/[id]/approve`,
+  `POST /api/ai/actions/[id]/reject`.
+- `components/assistant/chat.tsx` + `app/(app)/assistant/page.tsx` — chat UI with inline
+  confirmation cards for proposals.
+- `tests/ai-authorization.test.ts` (test 3).
+
+### Key decisions
+
+**The approve route claims a proposal with one conditional `UPDATE`, not a read-then-
+write.** The spec's own prose for §7.5 ("load the invocation row; checks
+`row.user_id === session.userId`; checks `status === 'proposed'`; checks not expired;
+executes the service; sets `status='approved'`") describes those as sequential steps, but
+implemented literally that way, two simultaneous approval requests both read
+`status='proposed'`, both pass every check, and both execute the underlying service call —
+the exact lost-update shape §4.1 exists to prevent, just on `ai_tool_invocations` instead
+of `products`. The fix is the same shape as `recordSale`'s row lock, translated to a
+single statement: `UPDATE ai_tool_invocations SET status='approved' WHERE id=$1 AND
+user_id=$2 AND status='proposed' AND expires_at > now()`. Zero rows affected is the
+single failure signal for "not yours," "doesn't exist," "already handled," and "expired
+by the letter of the check" all at once — which is also the `NOT_FOUND`-not-`FORBIDDEN`
+reasoning from §6.1 applied to this table. This is not a deviation from §7.5; it is the
+same requirement ("single-use — a second approval fails") implemented so that it is
+actually true under concurrency, not just true when tested serially.
+
+**`status='expired'` is written lazily, on a failed approval claim past `expires_at`, not
+by a scheduled job.** §0 rule 3 rules out queues and cron. `getSession()` already expires
+stale sessions the same way — on read, opportunistically — so the approve route does the
+same thing: if the atomic claim above matches nothing, but the row is still ours and still
+`status='proposed'`, it is past its expiry; mark it `expired` there and return
+`NOT_FOUND`.
+
+**`get_low_stock` and `get_reorder_advice` are both thin projections of
+`getReorderAdvice`.** Decided in Phase 4, implemented here: one query backs both tools'
+"Returns" shapes from §7.3 rather than two independent implementations of "products at or
+below threshold" that could disagree.
+
+**`get_sales_summary` is a thin projection of `getDashboardMetrics`,** trimmed to
+`{revenue, units, margin, topProducts}` before the result reaches the model. §6.4 lists
+no separate `getSalesSummary`, and the tool's required shape is a strict subset of what
+the dashboard already computes. Projecting matters here specifically: the full response
+includes a 30-plus-point daily series and an inventory-health breakdown neither needed by
+this tool nor free to hand to a model — extra tokens, and extra surface for injected
+product-name text (§7.6) to travel on.
+
+**`lib/services/purchase-orders.ts` ships with only `createPurchaseOrderDraft` in this
+phase.** The `create_purchase_order_draft` tool needs it to exist and compile; the file
+is complete and correct for what it does, but `listPurchaseOrders`, `updatePurchaseOrder`,
+the PO list/detail UI, and AI-drafted email generation are Phase 6 work (§12 places the PO
+draft *feature* there) and will extend this same file rather than create a second one.
+
+**The PO email draft (Phase 6) will call the Gemini client directly, with no `tools:`
+array.** Handing the tool registry to a second generation path would create a second code
+path from model output to the database, breaking §7.1 rule 3 ("one executor"). A plain
+`generateContent` call that only produces prose has nowhere to cause a write.
+
+**Conversation history is a client-held, opaque round-trip value, not a server-persisted
+table.** The schema (§4) has no chat-messages table, and §0 rule 3 rules out adding
+infrastructure to fake statelessness another way. `POST /api/ai/chat` accepts the prior
+`history` array back from the client and returns the updated one; the server holds no
+conversation state between requests. `aiChatSchema` validates its shape (an array of
+`{role, parts}`), not its exact contents, since the client only ever resends what this
+same endpoint returned.
+
+### What to understand before the interview
+
+- **Why the approve route's `UPDATE` is the actual answer to "how do you stop a proposal
+  being approved twice," not the `status='proposed'` check in isolation.** A status check
+  followed by a separate write has a window between them; a single conditional `UPDATE`
+  does not. This is the same principle as `SELECT ... FOR UPDATE` in `recordSale`, applied
+  without a lock because a single-statement conditional update doesn't need one — the
+  atomicity comes from the statement itself, not from holding a lock across several.
+- **Why this uses `NOT_FOUND` for "already approved" and "not yours" alike.** Distinguishing
+  them in the response would tell an attacker whether a given proposal id exists and
+  belongs to someone else — an oracle, for the same reason a product `[id]` route never
+  returns `FORBIDDEN`.
+- **Why the identity-stripping step exists even though the Zod schemas already exclude
+  `userId`.** Zod's default `.object()` behavior silently drops unrecognized keys anyway,
+  so the explicit `stripIdentityFields` call is not the only thing preventing a
+  hallucinated `userId` from reaching a handler — the handler's signature
+  (`handler(userId, args)`) takes it as a separate argument the caller controls, not a
+  field read out of `args`, at all. The explicit strip is defence in depth and an
+  auditable step in the pipeline, not the sole safeguard; test 3 asserts the end state
+  (results resolve against the session user) rather than assuming the strip alone is what
+  guarantees it.
+- **Why `get_sales_summary` and `get_low_stock` don't have their own service functions.**
+  Two implementations of "revenue over a window" or "products below threshold" are two
+  places for that logic to quietly diverge. One function, two callers, is the same
+  argument §6 makes for the REST API and the AI tool layer sharing service functions in
+  the first place — applied one level down, to tools sharing functions with each other.
