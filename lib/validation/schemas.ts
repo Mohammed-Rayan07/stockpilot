@@ -83,3 +83,11 @@ export const listSalesQuerySchema = paginationSchema.extend({
   from: z.iso.datetime().optional(),
   to: z.iso.datetime().optional(),
 });
+
+export const dashboardQuerySchema = z.object({
+  days: z.coerce.number().int().min(1).max(365).optional(),
+});
+
+export const reorderAdviceQuerySchema = z.object({
+  safetyDays: z.coerce.number().int().min(0).max(90).optional(),
+});
