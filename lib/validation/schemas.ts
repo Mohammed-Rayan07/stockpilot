@@ -106,7 +106,14 @@ export const updatePurchaseOrderSchema = z.object({
 
 // The `history` array is an opaque round-trip value: the client only ever resends what
 // POST /api/ai/chat previously returned, so this checks shape (a Gemini Content[]), not
-// exact contents.
+// exact contents. Being opaque to us does not make it free: every entry is replayed to
+// Gemini as input tokens on every subsequent turn, so an unbounded array is unbounded
+// spend per turn even though `message` itself is capped. The entry count and the
+// stringified-size cap below bound that cost regardless of how the client got the array
+// that large.
+const HISTORY_MAX_ENTRIES = 20;
+const HISTORY_MAX_CHARS = 20_000;
+
 export const aiChatSchema = z.object({
   message: z.string().trim().min(1, 'Message is required.').max(2000, 'Message is too long.'),
   history: z
@@ -116,6 +123,10 @@ export const aiChatSchema = z.object({
         parts: z.array(z.record(z.string(), z.unknown())).optional(),
       }),
     )
-    .max(200)
-    .optional(),
+    .max(HISTORY_MAX_ENTRIES, `History cannot exceed ${HISTORY_MAX_ENTRIES} entries.`)
+    .optional()
+    .refine(
+      (history) => !history || JSON.stringify(history).length <= HISTORY_MAX_CHARS,
+      `History is too large (max ${HISTORY_MAX_CHARS} characters).`,
+    ),
 });
