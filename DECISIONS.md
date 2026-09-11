@@ -82,8 +82,10 @@ and any non-`&` path); the fix is to rename the folder so it contains no `&`. Se
 - **Why `products.quantity` and `stock_movements` both exist.** Deliberate
   denormalisation: reading current stock is one indexed lookup instead of a `SUM` over
   the whole ledger, while the ledger preserves a full audit trail. The invariant that
-  keeps them honest is that only two functions may write `products.quantity`, and both do
-  it inside a transaction that also appends the matching ledger row.
+  keeps them honest: no change to `products.quantity` occurs without a matching
+  `stock_movements` row appended inside the same transaction. Three functions write
+  `products.quantity` -- `recordSale`, `adjustStock`, and `createProduct` (once, at insert
+  time, for non-zero opening stock) -- and all three hold that invariant.
 
 ---
 
@@ -118,10 +120,10 @@ request whose method is not GET/HEAD, including same-origin ones, so a legitimat
 mutation from the app always carries it. Treating "absent" as "trusted" is the standard
 way this check gets bypassed by a non-browser client.
 
-**`quantity` is deliberately absent from `updateProductSchema`.** Stock may only change
-through `recordSale` and `adjustStock`, which write the ledger in the same transaction.
-Allowing a generic product edit to set the quantity would break the §4.2 invariant
-silently, so the field is simply not accepted.
+**`quantity` is deliberately absent from `updateProductSchema`.** Stock changes only
+through `recordSale`, `adjustStock`, and `createProduct`'s opening-stock insert, all three
+of which write the ledger in the same transaction. Allowing a generic product edit to set
+the quantity would break the §4.2 invariant silently, so the field is simply not accepted.
 
 **The rate-limit key is `ip:email`, not just `email`.** Keying on the email alone would let
 an attacker lock a victim out of their own account by burning the limit from anywhere.
@@ -184,17 +186,20 @@ inside the callback therefore could not run the follow-up SELECT. The catch sits
 the whole `db.transaction()` call, and the lookup runs on a fresh connection.
 
 **`adjustStock` lives in `lib/services/sales.ts` alongside `recordSale`.** §9 defines no
-`stock.ts`, and §4.2's invariant is that *exactly two* functions may write
-`products.quantity`. Keeping both in one file means that claim can be verified by reading
-a single file rather than trusting a grep.
+`stock.ts`, and two of the three functions that write `products.quantity` -- `recordSale`
+and `adjustStock` -- are the two that mutate an *existing* row under the `FOR UPDATE` lock.
+Keeping both in one file means that half of the §4.2 invariant (the locked-transaction
+half) can be verified by reading a single file rather than trusting a grep. The third
+writer, `createProduct`, is different in kind (see below) and lives with the other product
+functions instead.
 
 **`createProduct` writes an `initial` ledger row inside a transaction when opening stock
-is non-zero.** Creating a product with `quantity: 50` is a write to `products.quantity`.
-Without the matching ledger row, the §4.2 reconciliation query would report a mismatch on
-every newly created product. This is a third writer of `products.quantity` in the literal
-sense, but it writes the value at *insert* time rather than mutating an existing row; the
-invariant that matters — no change to quantity without a ledger row in the same
-transaction — holds.
+is non-zero.** Creating a product with `quantity: 50` is a write to `products.quantity`,
+so §4.2's invariant -- no change to `products.quantity` without a matching `stock_movements`
+row in the same transaction -- applies to it exactly as it does to `recordSale` and
+`adjustStock`. It writes the value at *insert* time rather than mutating an existing row,
+so it needs no row lock, but it is still the third writer, named alongside the other two
+everywhere this invariant is stated.
 
 **Cross-tenant access returns `NOT_FOUND`, never `FORBIDDEN`.** A 403 confirms that the id
 exists, which turns every `/api/products/[id]` route into an existence oracle across

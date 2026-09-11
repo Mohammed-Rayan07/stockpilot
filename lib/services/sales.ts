@@ -115,8 +115,10 @@ export async function recordSale(
 }
 
 /**
- * The only other function permitted to write `products.quantity`. Same locked-transaction
- * pattern as recordSale, for the same reason.
+ * One of the three functions permitted to write `products.quantity` -- the others are
+ * recordSale, above, and createProduct's opening-stock insert. Same locked-transaction
+ * pattern as recordSale, for the same reason: no change to quantity without a matching
+ * stock_movements row in the same transaction.
  */
 export async function adjustStock(
   userId: string,

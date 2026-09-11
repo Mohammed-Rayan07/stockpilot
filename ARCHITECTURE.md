@@ -221,10 +221,11 @@ ledger of every change. This is deliberate denormalisation: reading stock is one
 lookup instead of a `SUM` over the ledger, while the ledger gives a full audit trail and
 allows reconciliation.
 
-**Invariant:** every write to `products.quantity` happens inside a transaction that also
-appends a matching `stock_movements` row. Exactly **two** functions may mutate
-`products.quantity` — `recordSale` (§4.1) and `adjustStock` (§4.2). Nothing else touches
-it.
+**Invariant:** no change to `products.quantity` occurs without a matching `stock_movements`
+row appended inside the same transaction. Three functions write `products.quantity` —
+`recordSale` (§4.1), `adjustStock` (§4.2), and `createProduct`, which writes it once at
+insert time for non-zero opening stock. All three append the matching ledger row in the
+same transaction that changes the value. Nothing else touches `products.quantity` at all.
 
 Reconciliation query:
 
@@ -444,8 +445,9 @@ follow-up lookup cannot run there. Note also that Drizzle wraps driver errors in
 
 ### 4.2 `adjustStock(userId, productId, delta, reason, actor, note?)`
 
-Same locked-transaction pattern. The only other function permitted to write
-`products.quantity`. Rejects any adjustment that would take quantity below zero.
+Same locked-transaction pattern as `recordSale`. One of the three functions permitted to
+write `products.quantity` — the third is `createProduct`'s insert-time write for opening
+stock (§2.2). Rejects any adjustment that would take quantity below zero.
 
 ### 4.3 `getReorderAdvice(userId, opts?)`
 

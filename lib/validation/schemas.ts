@@ -42,9 +42,11 @@ export const updateProductSchema = z.object({
   supplierId: z.uuid().optional().nullable(),
 });
 
-// `quantity` is deliberately absent from updateProductSchema. Stock is changed only by
-// recordSale and adjustStock, both of which write the ledger in the same transaction.
-// Letting a generic product edit set the quantity would break the §4.2 invariant.
+// `quantity` is deliberately absent from updateProductSchema. The §4.2 invariant is that
+// no change to products.quantity happens without a matching stock_movements row in the
+// same transaction -- recordSale, adjustStock and createProduct (at insert time, for
+// opening stock) are the only three writers, and all three hold that invariant. A generic
+// product edit is none of those three, so it is not allowed to touch quantity at all.
 
 export const createSupplierSchema = z.object({
   name: z.string().trim().min(1, 'Name is required.').max(200),
