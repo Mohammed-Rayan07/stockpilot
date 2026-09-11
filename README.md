@@ -1,28 +1,75 @@
 # StockPilot
 
-## 1. What it is
+Multi-tenant inventory management with atomic stock control and a read/propose-only AI
+assistant — built against a specification written before any code, for a technical
+interview.
 
-StockPilot is a multi-tenant inventory management app for a small business: track products
-and suppliers, log sales with atomic stock decrements, see analytics, and ask an AI
-assistant about your inventory — one that can only read and propose, never mutate data
-without your explicit approval.
-
-**Live URL:** _not yet deployed — see the Vercel steps handed off alongside this README._
+**Live URL:** <!-- FILL IN -->
 **Demo credentials:** `demo@stockpilot.app` / `demo-password-123`
 
-## 2. Setup
+## What makes this interesting
+
+- **The last unit can't sell twice.** `recordSale` takes a `SELECT ... FOR UPDATE` row
+  lock before checking stock, closing a lost-update race that Postgres's default
+  isolation does not prevent on its own. → [§5 Concurrency](#5-concurrency)
+- **Every stock change is provable, not just recorded.** `products.quantity` is
+  denormalised for fast reads; `stock_movements` is an append-only ledger; one
+  reconciliation query proves they agree. → [§4 Database schema](#4-database-schema)
+- **The AI assistant can propose anything and execute nothing.** Every mutating tool call
+  becomes a row awaiting explicit human approval — there is no code path from a model
+  function call directly to a write. → [§7 AI architecture](#7-ai-architecture)
+- **The approval race is closed with one `UPDATE`, not a lock.** Two simultaneous
+  approvals of the same AI proposal is the identical lost-update shape as the sale race
+  above, fixed the same way in spirit but with a single conditional `UPDATE` whose WHERE
+  clause is the ownership check, the status check and the expiry check together.
+  → [§7 AI architecture](#7-ai-architecture)
+- **Cross-tenant lookups return 404, never 403.** A 403 confirms the id exists, turning
+  any `[id]` route into an existence oracle across tenants — every service function
+  returns the identical `NotFoundError` whether a row belongs to someone else or doesn't
+  exist at all. → [§6 Security](#6-security)
+
+## 1. What it is
+
+A small business tracks products and suppliers, logs sales with atomic stock decrements,
+watches analytics, and asks an AI assistant about its inventory — one that can only read
+and propose, never mutate data without explicit human approval. Every tenant's data is
+isolated at the application layer; the AI executor calls the same service functions the
+REST API calls, so nothing about the assistant's reach is special-cased.
+
+## 2. Running locally
+
+**Prerequisites**
+
+- Node.js 20+ and npm
+- A [Neon](https://neon.tech) Postgres project (or any Postgres 14+ instance) — Neon
+  gives you a pooled and an unpooled connection string separately, and this app expects
+  both
+- A [Gemini API key](https://aistudio.google.com/apikey) (the free tier is enough to run
+  the assistant)
+
+**Environment variables** (`.env`, copied from `.env.example`)
+
+| Variable | Where it comes from |
+| --- | --- |
+| `DATABASE_URL` | Neon dashboard → project → **Connect** → the **pooled** connection string. Used by the app at runtime (`lib/db/index.ts`). |
+| `DATABASE_URL_UNPOOLED` | Same dialog → the **direct** (unpooled) connection string. Used by `drizzle-kit` migrations only — a pooled connection doesn't support the session-level locking migrations need. |
+| `GEMINI_API_KEY` | [Google AI Studio](https://aistudio.google.com/apikey). Server-only; never referenced from a client component. |
+| `APP_ORIGIN` | The app's own absolute origin — `http://localhost:3000` locally, the deployed URL in production. Compared against every mutating request's `Origin` header (§6). |
+| `NODE_ENV` | Set automatically by `next dev` / `next build` / Vercel; only needed here if a script outside that lifecycle reads it. |
+
+**Commands, in order**
 
 ```bash
 git clone <this-repo>
 cd stockpilot
 npm install
-cp .env.example .env        # fill in DATABASE_URL, DATABASE_URL_UNPOOLED, GEMINI_API_KEY
-npm run db:migrate           # applies lib/db/migrations/ against DATABASE_URL_UNPOOLED
-npm run db:seed              # demo user, 2 suppliers, 6 products, ~60 sales — idempotent
-npm run dev                  # http://localhost:3000
+cp .env.example .env          # fill in the table above
+npm run db:migrate            # applies lib/db/migrations/ against DATABASE_URL_UNPOOLED
+npm run db:seed               # demo user, 2 suppliers, 6 products, ~60 sales -- idempotent
+npm run dev                   # http://localhost:3000
 ```
 
-Run the test suite (needs a real Postgres — see §5):
+Run the test suite (needs the same real Postgres, not a mock — see §5 for why):
 
 ```bash
 npm test
@@ -62,6 +109,20 @@ That single rule is what makes the AI integration auditable — every read or wr
 assistant performs is the exact same code path a human clicking a button would hit, with
 the same tenant checks, the same transactions, the same everything.
 
+**Tech stack**
+
+| Layer | Choice | Why |
+| --- | --- | --- |
+| Framework | Next.js 15, App Router, Turbopack | Route handlers and Server Components in one codebase — no separate API project to keep in sync with the frontend. |
+| Language | TypeScript, strict | Zod's inferred types and Drizzle's generated column types make illegal states hard to construct by accident, not just discouraged by convention. |
+| UI | React 19, Tailwind CSS v4, shadcn/ui (Base UI) | shadcn's components are copied into the repo, not installed behind a package boundary, so they stay editable; Base UI over Radix is simply what shadcn's current registry (`base-nova`) installs today. |
+| Charts | Recharts | Dashboard and Reorder Advisor visualisations, with a declarative API that matches the rest of the React tree. |
+| Database | Postgres via Neon, Drizzle ORM | Serverless Postgres with pooled/unpooled connection strings out of the box; Drizzle stays SQL-shaped rather than abstracting SQL away, which matters when the app's correctness depends on a hand-written `SELECT ... FOR UPDATE` and a hand-written reconciliation query. |
+| Validation | Zod | One schema per input, shared by the REST handlers and the AI executor — two copies of a validation rule is how the two call paths drift apart and an authorization hole opens. |
+| Auth | Hand-rolled (`bcryptjs`, sha256 session tokens) | No NextAuth, Lucia, or Clerk — the security-critical path is explicit and reviewable rather than delegated, and there isn't enough of it to justify a dependency. |
+| AI | Gemini 2.5 Flash via `@google/genai` | Native function calling with an OpenAPI-subset parameter format; a generous free tier fits a demo project. |
+| Tests | Vitest, against real Postgres | The properties under test — row-level locking, tenant scoping — are exactly what a mocked database would report as passing regardless of whether they hold. |
+
 ## 4. Database schema
 
 Eight tables, `public` schema, every business table carrying `user_id` as the tenant
@@ -79,8 +140,9 @@ users ──┬──< sessions
 - **`users` / `sessions`** — hand-rolled auth (§6). Email uniqueness is a functional
   index on `lower(email)`.
 - **`suppliers`** — name, email, lead time in days (used by the reorder formula).
-- **`products`** — price, cost, quantity, reorder threshold. `quantity` is only ever
-  written by `recordSale` and `adjustStock`.
+- **`products`** — price, cost, quantity, reorder threshold. `quantity` is written only
+  by `recordSale`, `adjustStock`, and `createProduct`'s insert-time write for opening
+  stock — see the invariant below.
 - **`sales`** — one row per sale, `unit_price`/`unit_cost` snapshotted at sale time.
 - **`stock_movements`** — append-only ledger of every quantity change.
 - **`purchase_orders`** — `lines` is a JSONB snapshot, not a child table.
@@ -99,9 +161,11 @@ other tenant already holds that SKU.
 
 **Why `products.quantity` and `stock_movements` both exist.** Deliberate denormalisation:
 reading current stock is one indexed lookup instead of a `SUM` over the whole ledger, while
-the ledger preserves a full audit trail. The invariant that keeps them honest — exactly two
-functions may write `products.quantity`, and both append a matching ledger row in the same
-transaction — is checkable directly:
+the ledger preserves a full audit trail. The invariant that keeps them honest: no change to
+`products.quantity` occurs without a matching `stock_movements` row appended inside the
+same transaction. Three functions write `products.quantity` — `recordSale`, `adjustStock`,
+and `createProduct` (once, at insert time, for non-zero opening stock) — and all three hold
+that invariant, which is checkable directly:
 
 ```sql
 SELECT p.id, p.quantity, COALESCE(SUM(m.delta), 0) AS ledger_balance
@@ -150,9 +214,12 @@ last unit and asserts one succeeds, one throws `InsufficientStockError`, final q
 `0`, and exactly one `sales` row exists.
 
 The same lost-update shape shows up again in the AI approval flow (§7) — a proposal row
-being claimed by two simultaneous approval requests — and is closed the same way, with a
-single conditional `UPDATE` instead of a lock, since only one row and one statement are
-involved.
+being claimed by two simultaneous approval requests — and is closed the same way in spirit,
+with a single conditional `UPDATE` instead of a row lock, since only one row and one
+statement are involved. `tests/ai-approval.test.ts` proves that one directly: a second
+approval of an already-approved proposal returns `404`, never executes twice, and a
+cross-tenant approval attempt returns `404` and leaves the product, the ledger, and even
+the proposal row itself untouched.
 
 ## 6. Security
 
@@ -183,13 +250,18 @@ involved.
   read. Cross-tenant access returns `404 NOT_FOUND`, never `403 FORBIDDEN`: a 403 would
   confirm the id exists, turning any `[id]` route into an existence oracle across tenants.
   Proven by `tests/tenant-isolation.test.ts`.
-- **Honest limitation — the login rate limiter is in-memory** (`lib/rate-limit.ts`), a
-  fixed-window counter keyed `ip:email` (keying on email alone would let an attacker lock
-  a victim out of their own account). This slows casual brute force and nothing more: the
-  `Map` lives in one serverless instance's memory, Vercel runs many instances and recycles
-  them, and an attacker spreading attempts across instances or cold starts sees a much
-  higher effective limit. The correct production answer is a shared store — Redis or
-  Upstash — keyed the same way. Disclosed here rather than left for a reviewer to find.
+- **Login rate limiting — honest about what it is and isn't.** `lib/rate-limit.ts` is an
+  in-memory fixed-window counter keyed `ip:email` (keying on email alone would let an
+  attacker lock a victim out of their own account by burning the limit from anywhere). The
+  `Map` lives in one serverless instance's memory; Vercel runs many instances and recycles
+  them, so an attacker spreading attempts across instances or cold starts sees a much
+  higher effective limit. This slows casual brute force and nothing more — the correct
+  production answer is a shared store, Redis or Upstash, keyed the same way. The `ip` half
+  reads `x-vercel-forwarded-for` (Vercel's copy of the client address, not subject to the
+  one override `x-forwarded-for` can have under an Enterprise proxy add-on), falling back
+  to `x-forwarded-for`. Off Vercel entirely — local dev, or any host that sets neither
+  header — both are absent and the key degrades to email-only. Both limitations are
+  disclosed here rather than left for a reviewer to find.
 
 ## 7. AI architecture
 
@@ -229,14 +301,15 @@ action in plain language, Confirm and Cancel. Confirming calls
 `POST /api/ai/actions/[id]/approve`, which claims the proposal with a single conditional
 `UPDATE` (`WHERE id=$1 AND user_id=$2 AND status='proposed' AND expires_at > now()`)
 *before* executing anything. This single statement is simultaneously the ownership
-re-check §7.5's authors singled out — **authorization must never rest on an identifier
-being unguessable, only on an explicit, independently-verified check** — and the fix for a
-race a naive read-then-write implementation has: two simultaneous approvals of the same
-proposal both reading `status='proposed'` before either writes back. Zero rows affected
-covers "not yours," "doesn't exist," and "already handled" identically, for the same
-reason a cross-tenant product lookup returns `404` and not `403`. An approved mutating
-action's service call passes `actor='ai_assistant'`, so every AI-originated stock change
-is traceable in the ledger forever.
+re-check — **authorization must never rest on an identifier being unguessable, only on an
+explicit, independently-verified check** — and the fix for a race a naive read-then-write
+implementation has: two simultaneous approvals of the same proposal both reading
+`status='proposed'` before either writes back. Zero rows affected covers "not yours,"
+"doesn't exist," and "already handled" identically, for the same reason a cross-tenant
+product lookup returns `404` and not `403`. An approved mutating action's service call
+passes `actor='ai_assistant'`, so every AI-originated stock change is traceable in the
+ledger forever. `tests/ai-approval.test.ts` proves all three failure modes against a real
+database: cross-tenant, double-approval, and expiry.
 
 **Prompt injection through stored data.** Product names, descriptions, and supplier notes
 are user-controlled text that enters the model's context — a product literally named
@@ -295,17 +368,18 @@ the brief's explicit scope.
 
 ## 10. AI tools used
 
-Claude Code was used to accelerate implementation against `BUILD_SPEC.md`. The
-architecture — stack, data model, auth design, the AI executor's four rules, the reorder
-formula — was decided in the specification before any code was written; Claude Code
-implemented against that specification phase by phase, and every file was reviewed. The
-brief explicitly permits this; hiding it would read worse than owning it.
+Claude Code was used to accelerate implementation against a specification (`ARCHITECTURE.md`
+and `DECISIONS.md` are its record) written before any code was written. The architecture —
+stack, data model, auth design, the AI executor's four rules, the reorder formula — was
+decided in that specification up front; Claude Code implemented against it phase by phase,
+and every file was reviewed. The brief explicitly permits this; hiding it would read worse
+than owning it.
 
 ## 11. Trade-offs and what I'd do next
 
 - **In-memory rate limiting → Redis/Upstash.** Covered honestly in §6 — the current
   limiter slows casual abuse and nothing more under Vercel's multi-instance, cold-start
-  model.
+  model, and degrades further (to an email-only key) off Vercel entirely.
 - **JSONB purchase-order lines → a child table**, if cross-PO reporting ("how much have I
   spent with this supplier this year") ever became a real requirement. JSONB is correct
   for a point-in-time snapshot that's never queried relationally; it stops being correct
@@ -319,3 +393,14 @@ brief explicitly permits this; hiding it would read worse than owning it.
 - **Single-region database.** Fine for a small business's own usage pattern; would need
   read replicas or a multi-region strategy before it could serve geographically
   distributed tenants with low latency.
+- **Chat history is client-supplied, and that's fine.** `POST /api/ai/chat` accepts a
+  `history` array the client resends on every turn instead of the server holding
+  conversation state. That sounds like it hands the client authority it shouldn't have,
+  but no authority derives from history at all — it's a transcript, not a credential.
+  Every tool call the executor makes re-resolves against the session's own `userId` (§7
+  rule 1) regardless of what the history says, so a forged or replayed history can
+  misdirect nothing; it can only mislead whoever forged it, by feeding their own request a
+  fabricated context. The one real cost of an unbounded history is token spend, not
+  authorization, and that's bounded directly rather than left open: `aiChatSchema` caps it
+  at 20 entries and 20,000 characters, rejecting past either with `VALIDATION_ERROR`
+  (`lib/validation/schemas.ts`).
