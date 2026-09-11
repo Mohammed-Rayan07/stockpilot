@@ -4,8 +4,25 @@ Multi-tenant inventory management with atomic stock control and a read/propose-o
 assistant — built against a specification written before any code, for a technical
 interview.
 
-**Live URL:** <!-- FILL IN -->
-**Demo credentials:** `demo@stockpilot.app` / `demo-password-123`
+| | |
+| --- | --- |
+| **Live demo** | <!-- FILL IN --> _not yet deployed_ |
+| **Demo login** | `demo@stockpilot.app` / `demo-password-123` |
+| **Stack** | Next.js 15 · TypeScript · Postgres (Neon) · Drizzle · Gemini 2.5 Flash |
+| **Tests** | `npm test` — 5 files, 18 cases, run against a real database |
+
+**Contents:** [What makes this interesting](#what-makes-this-interesting) ·
+[1. What it is](#1-what-it-is) ·
+[2. Running locally](#2-running-locally) ·
+[3. Architecture](#3-architecture) ·
+[4. Database schema](#4-database-schema) ·
+[5. Concurrency](#5-concurrency) ·
+[6. Security](#6-security) ·
+[7. AI architecture](#7-ai-architecture) ·
+[8. Reorder methodology](#8-reorder-methodology) ·
+[9. Product innovation](#9-product-innovation--reorder-advisor--po-draft) ·
+[10. AI tools used](#10-ai-tools-used) ·
+[11. Trade-offs](#11-trade-offs-and-what-id-do-next)
 
 ## What makes this interesting
 

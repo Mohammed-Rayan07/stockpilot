@@ -18,3 +18,9 @@ coverage/
 # Source specification. Superseded by ARCHITECTURE.md; ignored so a local copy
 # cannot be re-committed.
 BUILD_SPEC.md
+.neon
+
+# Claude Code local tooling state -- downloaded skill docs and their lockfile, not
+# project source.
+.claude/
+skills-lock.json
