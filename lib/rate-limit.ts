@@ -57,11 +57,23 @@ export function loginRateLimitKey(ip: string, email: string): string {
 }
 
 /**
- * Vercel puts the client address in x-forwarded-for. The header is spoofable in general;
- * behind Vercel's proxy the first entry is the one the platform observed.
+ * `x-vercel-forwarded-for` is Vercel's own copy of the client address: per Vercel's docs
+ * it is identical to `x-forwarded-for` except that it cannot be overwritten, whereas
+ * `x-forwarded-for` *can* be, if the account has purchased the Enterprise "trusted proxy"
+ * add-on that lets a custom upstream proxy set it. `x-forwarded-for` is kept as a
+ * fallback: by default (no trusted proxy configured) Vercel overwrites it at the edge and
+ * does not forward client-supplied values, specifically to prevent spoofing, so it too is
+ * trustworthy for accounts without that add-on.
+ *
+ * Off Vercel entirely -- local dev, or any other host in front that does not set either
+ * header -- neither is present and this returns 'unknown'. Every request then collapses
+ * onto the same IP bucket and the `ip:email` key degrades to an email-only key. That
+ * limitation, alongside the in-memory store itself, is disclosed in README.md rather than
+ * presenting the limiter as fully IP-scoped everywhere it might run.
  */
 export function clientIpFrom(request: Request): string {
-  const forwarded = request.headers.get('x-forwarded-for');
+  const forwarded =
+    request.headers.get('x-vercel-forwarded-for') ?? request.headers.get('x-forwarded-for');
 
   if (forwarded) {
     return forwarded.split(',')[0].trim();
