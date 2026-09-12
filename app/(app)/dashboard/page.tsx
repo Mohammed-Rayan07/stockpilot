@@ -21,8 +21,6 @@ export default async function DashboardPage() {
     getReorderAdvice(session.userId),
   ]);
 
-  const skusBelowReorder = metrics.inventoryHealth.bands.low + metrics.inventoryHealth.bands.out_of_stock;
-
   return (
     <div className="space-y-6">
       <div>
@@ -36,7 +34,7 @@ export default async function DashboardPage() {
         revenue={metrics.revenue}
         units={metrics.units}
         stockValueAtCost={metrics.inventoryHealth.stockValueAtCost}
-        skusBelowReorder={skusBelowReorder}
+        bands={metrics.inventoryHealth.bands}
       />
 
       <RevenueChart data={metrics.revenueOverTime} />
