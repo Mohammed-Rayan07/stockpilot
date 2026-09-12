@@ -2,9 +2,11 @@
 
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
+import { Receipt } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { EmptyState } from '@/components/ui/empty-state';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import {
@@ -146,12 +148,11 @@ export function SalesManager({
       </Card>
 
       {sales.length === 0 ? (
-        <div className="rounded-lg border border-dashed p-10 text-center">
-          <p className="font-medium">No sales yet</p>
-          <p className="text-muted-foreground mt-1 text-sm">
-            Recorded sales will appear here, most recent first.
-          </p>
-        </div>
+        <EmptyState
+          icon={Receipt}
+          title="No sales yet"
+          description="Recorded sales will appear here, most recent first."
+        />
       ) : (
         <div className="overflow-x-auto rounded-lg border">
           <Table>
@@ -169,7 +170,10 @@ export function SalesManager({
               {sales.map((sale) => (
                 <TableRow key={sale.id}>
                   <TableCell className="whitespace-nowrap">
-                    {new Date(sale.soldAt).toLocaleDateString()}
+                    {new Intl.DateTimeFormat('en-IN', {
+                      dateStyle: 'medium',
+                      timeZone: 'Asia/Kolkata',
+                    }).format(new Date(sale.soldAt))}
                   </TableCell>
                   <TableCell className="font-medium">{sale.productName}</TableCell>
                   <TableCell className="font-mono text-xs">{sale.sku}</TableCell>
