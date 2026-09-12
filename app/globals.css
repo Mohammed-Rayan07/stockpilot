@@ -7,7 +7,12 @@
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: var(--font-sans);
+  /* Was `var(--font-sans)` -- a self-reference that never resolves, so every element
+     using the `font-sans` utility (including `html` below) silently fell back to the
+     browser default font. `--font-geist-sans` is the variable app/layout.tsx actually
+     sets via next/font. */
+  --font-sans: var(--font-geist-sans), ui-sans-serif, system-ui, -apple-system,
+    "Segoe UI", Roboto, sans-serif;
   --font-mono: var(--font-geist-mono);
   --font-heading: var(--font-sans);
   --color-sidebar-ring: var(--sidebar-ring);
@@ -27,6 +32,9 @@
   --color-input: var(--input);
   --color-border: var(--border);
   --color-destructive: var(--destructive);
+  --color-success: var(--success);
+  --color-warning: var(--warning);
+  --color-info: var(--info);
   --color-accent-foreground: var(--accent-foreground);
   --color-accent: var(--accent);
   --color-muted-foreground: var(--muted-foreground);
@@ -49,32 +57,47 @@
 }
 
 :root {
-  --background: oklch(1 0 0);
-  --foreground: oklch(0.145 0 0);
+  /* Canvas vs. card are deliberately different now: a slightly tinted page background
+     lets a pure-white card actually read as a surface instead of vanishing into the
+     page (both were oklch(1 0 0) before). Every neutral below carries the same faint
+     blue tint (hue 260) so the grey scale reads as designed rather than default. */
+  --background: oklch(0.985 0.004 260);
+  --foreground: oklch(0.17 0.012 260);
   --card: oklch(1 0 0);
-  --card-foreground: oklch(0.145 0 0);
+  --card-foreground: oklch(0.17 0.012 260);
   --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.145 0 0);
-  /* The one accent colour (§ visual quality). Primary actions and the single data-viz
-     accent share it; every other surface stays achromatic grey. */
-  --primary: oklch(0.55 0.19 258);
-  --primary-foreground: oklch(0.985 0 0);
-  --secondary: oklch(0.97 0 0);
+  --popover-foreground: oklch(0.17 0.012 260);
+  /* One accent colour, one job: actions and the primary data series. Status (stock
+     health, PO state) gets its own small semantic scale below rather than borrowing
+     this one -- primary means "do something", not "this is fine" or "this is bad". */
+  --primary: oklch(0.5 0.19 262);
+  --primary-foreground: oklch(0.99 0 0);
+  --secondary: oklch(0.955 0.006 260);
   --secondary-foreground: oklch(0.205 0 0);
-  --muted: oklch(0.97 0 0);
-  --muted-foreground: oklch(0.556 0 0);
-  --accent: oklch(0.97 0 0);
+  --muted: oklch(0.965 0.005 260);
+  --muted-foreground: oklch(0.5 0.015 260);
+  --accent: oklch(0.955 0.006 260);
   --accent-foreground: oklch(0.205 0 0);
-  --destructive: oklch(0.577 0.245 27.325);
-  --border: oklch(0.922 0 0);
-  --input: oklch(0.922 0 0);
-  --ring: oklch(0.708 0 0);
-  /* chart-1 is the one accent colour; chart-2..5 are neutral greys for secondary series. */
-  --chart-1: oklch(0.55 0.19 258);
-  --chart-2: oklch(0.75 0 0);
-  --chart-3: oklch(0.6 0 0);
-  --chart-4: oklch(0.45 0 0);
-  --chart-5: oklch(0.3 0 0);
+  --destructive: oklch(0.55 0.22 27);
+  /* Stock health and purchase-order status share this scale everywhere they appear
+     (StockHealthBadge, PoStatusBadge, the dashboard health card): success=healthy/sent,
+     warning=low stock, destructive=out of stock. info is a second name for the brand
+     blue, used where a badge means "informational", not "act now" -- e.g. a sent PO
+     isn't cancelled or a problem, so it doesn't get warning/destructive at all. */
+  --success: oklch(0.52 0.15 150);
+  --warning: oklch(0.58 0.15 70);
+  --info: oklch(0.5 0.19 262);
+  --border: oklch(0.91 0.006 260);
+  --input: oklch(0.91 0.006 260);
+  --ring: oklch(0.5 0.19 262);
+  /* chart-1 is the one accent colour and the only series either chart currently
+     renders; chart-2..5 are a categorical set kept ready for a second series rather
+     than more greys. */
+  --chart-1: oklch(0.5 0.19 262);
+  --chart-2: oklch(0.65 0.12 190);
+  --chart-3: oklch(0.72 0.15 75);
+  --chart-4: oklch(0.58 0.16 300);
+  --chart-5: oklch(0.62 0.18 15);
   --radius: 0.625rem;
   --sidebar: oklch(0.985 0 0);
   --sidebar-foreground: oklch(0.145 0 0);
@@ -87,29 +110,32 @@
 }
 
 .dark {
-  --background: oklch(0.145 0 0);
+  --background: oklch(0.16 0.006 260);
   --foreground: oklch(0.985 0 0);
-  --card: oklch(0.205 0 0);
+  --card: oklch(0.21 0.008 260);
   --card-foreground: oklch(0.985 0 0);
-  --popover: oklch(0.205 0 0);
+  --popover: oklch(0.21 0.008 260);
   --popover-foreground: oklch(0.985 0 0);
   --primary: oklch(0.7 0.16 258);
   --primary-foreground: oklch(0.145 0 0);
-  --secondary: oklch(0.269 0 0);
+  --secondary: oklch(0.27 0.008 260);
   --secondary-foreground: oklch(0.985 0 0);
-  --muted: oklch(0.269 0 0);
+  --muted: oklch(0.27 0.008 260);
   --muted-foreground: oklch(0.708 0 0);
-  --accent: oklch(0.269 0 0);
+  --accent: oklch(0.27 0.008 260);
   --accent-foreground: oklch(0.985 0 0);
   --destructive: oklch(0.704 0.191 22.216);
+  --success: oklch(0.72 0.14 150);
+  --warning: oklch(0.78 0.14 80);
+  --info: oklch(0.7 0.16 258);
   --border: oklch(1 0 0 / 10%);
   --input: oklch(1 0 0 / 15%);
   --ring: oklch(0.556 0 0);
   --chart-1: oklch(0.7 0.16 258);
-  --chart-2: oklch(0.6 0 0);
-  --chart-3: oklch(0.75 0 0);
-  --chart-4: oklch(0.5 0 0);
-  --chart-5: oklch(0.85 0 0);
+  --chart-2: oklch(0.7 0.1 190);
+  --chart-3: oklch(0.78 0.13 75);
+  --chart-4: oklch(0.65 0.14 300);
+  --chart-5: oklch(0.68 0.16 15);
   --sidebar: oklch(0.205 0 0);
   --sidebar-foreground: oklch(0.985 0 0);
   --sidebar-primary: oklch(0.488 0.243 264.376);
@@ -129,5 +155,10 @@
   }
   html {
     @apply font-sans;
+  }
+  /* Every numeric table column already sets `tabular-nums` by hand; this catches the
+     ones that don't (e.g. price/cost cells) without hunting each one down. */
+  table {
+    font-variant-numeric: tabular-nums;
   }
 }
