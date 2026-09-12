@@ -6,7 +6,7 @@ interview.
 
 | | |
 | --- | --- |
-| **Live demo** | <!-- FILL IN --> _not yet deployed_ |
+| **Live demo** | [stockpilot-ten-beryl.vercel.app](https://stockpilot-ten-beryl.vercel.app) |
 | **Demo login** | `demo@stockpilot.app` / `demo-password-123` |
 | **Stack** | Next.js 15 · TypeScript · Postgres (Neon) · Drizzle · Gemini 2.5 Flash |
 | **Tests** | `npm test` — 5 files, 18 cases, run against a real database |

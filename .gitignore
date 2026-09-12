@@ -24,3 +24,6 @@ BUILD_SPEC.md
 # project source.
 .claude/
 skills-lock.json
+
+.vercel
+.env*
