@@ -9,6 +9,10 @@ import { ApiError, apiPost } from '@/lib/client-api';
 
 type Mode = 'login' | 'register';
 
+// Seeded by lib/db/seed.ts: 2 suppliers, 6 products, ~60 sales already in the database.
+const DEMO_EMAIL = 'demo@stockpilot.app';
+const DEMO_PASSWORD = 'demo-password-123';
+
 export function AuthForm({ mode }: { mode: Mode }) {
   const router = useRouter();
 
@@ -102,6 +106,21 @@ export function AuthForm({ mode }: { mode: Mode }) {
       <Button type="submit" className="w-full" disabled={submitting}>
         {submitting ? 'Working…' : mode === 'register' ? 'Create account' : 'Sign in'}
       </Button>
+
+      {mode === 'login' && (
+        <Button
+          type="button"
+          variant="outline"
+          className="w-full"
+          disabled={submitting}
+          onClick={() => {
+            setEmail(DEMO_EMAIL);
+            setPassword(DEMO_PASSWORD);
+          }}
+        >
+          Use the demo account
+        </Button>
+      )}
     </form>
   );
 }
