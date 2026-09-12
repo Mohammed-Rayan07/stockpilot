@@ -2,8 +2,9 @@
 
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
+import { Eye, Truck } from 'lucide-react';
 import { toast } from 'sonner';
-import { Badge } from '@/components/ui/badge';
+import { PoStatusBadge } from '@/components/status-badges';
 import { Button } from '@/components/ui/button';
 import {
   Dialog,
@@ -13,6 +14,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
+import { EmptyState } from '@/components/ui/empty-state';
 import {
   Table,
   TableBody,
@@ -35,12 +37,6 @@ export type PurchaseOrderRow = {
   totalCost: string;
   emailDraft: string | null;
   createdAt: string;
-};
-
-const STATUS_VARIANT: Record<PurchaseOrderStatus, 'default' | 'secondary' | 'destructive'> = {
-  draft: 'secondary',
-  sent: 'default',
-  cancelled: 'destructive',
 };
 
 export function PurchaseOrderList({ orders }: { orders: PurchaseOrderRow[] }) {
@@ -85,12 +81,11 @@ export function PurchaseOrderList({ orders }: { orders: PurchaseOrderRow[] }) {
 
   if (orders.length === 0) {
     return (
-      <div className="rounded-lg border border-dashed p-10 text-center">
-        <p className="font-medium">No purchase orders yet</p>
-        <p className="text-muted-foreground mt-1 text-sm">
-          Draft one from the Reorder Advisor page.
-        </p>
-      </div>
+      <EmptyState
+        icon={Truck}
+        title="No purchase orders yet"
+        description="Draft one from the Reorder Advisor page."
+      />
     );
   }
 
@@ -113,7 +108,7 @@ export function PurchaseOrderList({ orders }: { orders: PurchaseOrderRow[] }) {
               <TableRow key={order.id}>
                 <TableCell className="font-medium">{order.supplierName}</TableCell>
                 <TableCell>
-                  <Badge variant={STATUS_VARIANT[order.status]}>{order.status}</Badge>
+                  <PoStatusBadge status={order.status} />
                 </TableCell>
                 <TableCell className="text-right tabular-nums">{order.lines.length}</TableCell>
                 <TableCell className="text-right">{formatINR(order.totalCost)}</TableCell>
@@ -125,7 +120,7 @@ export function PurchaseOrderList({ orders }: { orders: PurchaseOrderRow[] }) {
                 </TableCell>
                 <TableCell className="text-right">
                   <Button variant="ghost" size="sm" onClick={() => openDetail(order)}>
-                    View
+                    <Eye /> View
                   </Button>
                 </TableCell>
               </TableRow>

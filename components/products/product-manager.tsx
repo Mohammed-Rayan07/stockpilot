@@ -2,10 +2,11 @@
 
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
+import { Archive, Package, Pencil, SlidersHorizontal } from 'lucide-react';
 import { toast } from 'sonner';
 import { AdjustStockDialog } from '@/components/products/adjust-stock-dialog';
 import { SupplierDialog } from '@/components/products/supplier-dialog';
-import { Badge } from '@/components/ui/badge';
+import { StockHealthBadge } from '@/components/status-badges';
 import { Button } from '@/components/ui/button';
 import {
   Dialog,
@@ -15,6 +16,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
+import { EmptyState } from '@/components/ui/empty-state';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import {
@@ -28,6 +30,13 @@ import {
 import { Textarea } from '@/components/ui/textarea';
 import { ApiError, apiDelete, apiPatch, apiPost } from '@/lib/client-api';
 import { formatINR } from '@/lib/money';
+import type { StockHealthBand } from '@/lib/services/analytics';
+
+function stockHealthBand(quantity: number, reorderThreshold: number): StockHealthBand {
+  if (quantity <= 0) return 'out_of_stock';
+  if (quantity <= reorderThreshold) return 'low';
+  return 'healthy';
+}
 
 export type ProductRow = {
   id: string;
@@ -181,15 +190,12 @@ export function ProductManager({
       </div>
 
       {products.length === 0 ? (
-        <div className="rounded-lg border border-dashed p-10 text-center">
-          <p className="font-medium">No products yet</p>
-          <p className="text-muted-foreground mt-1 text-sm">
-            Add your first product to start tracking stock.
-          </p>
-          <Button className="mt-4" onClick={openCreate}>
-            Add product
-          </Button>
-        </div>
+        <EmptyState
+          icon={Package}
+          title="No products yet"
+          description="Add your first product to start tracking stock."
+          action={<Button onClick={openCreate}>Add product</Button>}
+        />
       ) : (
         <div className="overflow-x-auto rounded-lg border">
           <Table>
@@ -206,7 +212,7 @@ export function ProductManager({
             </TableHeader>
             <TableBody>
               {products.map((product) => {
-                const low = product.quantity <= product.reorderThreshold;
+                const band = stockHealthBand(product.quantity, product.reorderThreshold);
                 return (
                   <TableRow key={product.id}>
                     <TableCell className="font-medium">{product.name}</TableCell>
@@ -218,21 +224,17 @@ export function ProductManager({
                     <TableCell className="text-right">{formatINR(product.costPrice)}</TableCell>
                     <TableCell className="text-right">
                       <span className="tabular-nums">{product.quantity}</span>
-                      {low && (
-                        <Badge variant="destructive" className="ml-2">
-                          Low
-                        </Badge>
-                      )}
+                      <StockHealthBadge band={band} className="ml-2" />
                     </TableCell>
                     <TableCell className="text-right whitespace-nowrap">
                       <Button variant="ghost" size="sm" onClick={() => openEdit(product)}>
-                        Edit
+                        <Pencil /> Edit
                       </Button>
                       <Button variant="ghost" size="sm" onClick={() => setAdjusting(product)}>
-                        Adjust
+                        <SlidersHorizontal /> Adjust
                       </Button>
                       <Button variant="ghost" size="sm" onClick={() => onArchive(product)}>
-                        Archive
+                        <Archive /> Archive
                       </Button>
                     </TableCell>
                   </TableRow>

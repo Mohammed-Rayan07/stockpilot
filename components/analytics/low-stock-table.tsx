@@ -1,5 +1,7 @@
-import { Badge } from '@/components/ui/badge';
+import { PackageCheck } from 'lucide-react';
+import { StockHealthBadge } from '@/components/status-badges';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { EmptyState } from '@/components/ui/empty-state';
 import { Skeleton } from '@/components/ui/skeleton';
 import {
   Table,
@@ -27,12 +29,12 @@ export function LowStockTable({ rows }: { rows: LowStockRow[] }) {
       </CardHeader>
       <CardContent>
         {rows.length === 0 ? (
-          <div className="rounded-lg border border-dashed p-8 text-center">
-            <p className="font-medium">Nothing below its reorder point</p>
-            <p className="text-muted-foreground mt-1 text-sm">
-              Every product is above the stock level you set for it.
-            </p>
-          </div>
+          <EmptyState
+            icon={PackageCheck}
+            tone="positive"
+            title="Nothing below its reorder point"
+            description="Every product is above the stock level you set for it."
+          />
         ) : (
           <div className="overflow-x-auto rounded-lg border">
             <Table>
@@ -52,11 +54,10 @@ export function LowStockTable({ rows }: { rows: LowStockRow[] }) {
                     <TableCell className="font-mono text-xs">{row.sku}</TableCell>
                     <TableCell className="text-right">
                       <span className="tabular-nums">{row.quantity}</span>
-                      {row.quantity === 0 && (
-                        <Badge variant="destructive" className="ml-2">
-                          Out
-                        </Badge>
-                      )}
+                      <StockHealthBadge
+                        band={row.quantity <= 0 ? 'out_of_stock' : 'low'}
+                        className="ml-2"
+                      />
                     </TableCell>
                     <TableCell className="text-right tabular-nums">
                       {row.reorderThreshold}

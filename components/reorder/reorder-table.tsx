@@ -2,9 +2,11 @@
 
 import { useRouter } from 'next/navigation';
 import { useMemo, useState } from 'react';
+import { PackageCheck } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { EmptyState } from '@/components/ui/empty-state';
 import { Input } from '@/components/ui/input';
 import {
   Table,
@@ -104,12 +106,12 @@ export function ReorderTable({
     return (
       <Card>
         <CardContent>
-          <div className="rounded-lg border border-dashed p-10 text-center">
-            <p className="font-medium">Nothing needs reordering</p>
-            <p className="text-muted-foreground mt-1 text-sm">
-              Every product is above the stock level you set for it.
-            </p>
-          </div>
+          <EmptyState
+            icon={PackageCheck}
+            tone="positive"
+            title="Nothing needs reordering"
+            description="Every product is above the stock level you set for it."
+          />
         </CardContent>
       </Card>
     );
