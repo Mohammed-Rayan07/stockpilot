@@ -150,11 +150,13 @@
   * {
     @apply border-border outline-ring/50;
   }
+  /* font-sans resolves through var(--font-geist-sans), and that custom property only
+     exists on <body> and below -- it's set by a class Next.js puts on body, not html.
+     Applying font-sans on `html` would reference an undefined variable there, making the
+     whole declaration invalid at computed-value time and falling back to the browser's
+     default (serif) font, inherited by everything under it. So this has to live on body. */
   body {
-    @apply bg-background text-foreground;
-  }
-  html {
-    @apply font-sans;
+    @apply bg-background text-foreground font-sans;
   }
   /* Every numeric table column already sets `tabular-nums` by hand; this catches the
      ones that don't (e.g. price/cost cells) without hunting each one down. */
