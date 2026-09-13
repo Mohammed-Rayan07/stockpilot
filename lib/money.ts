@@ -60,7 +60,27 @@ export function toMajor(minor: number): string {
   return `${sign}${rupees}.${String(paise).padStart(2, '0')}`;
 }
 
-/** "12.50" -> "₹12.50". Display only; never feed the result back into arithmetic. */
+/**
+ * Groups an unsigned run of digits Indian-style (lakh/crore): the last 3 digits form one
+ * group, everything before that groups in pairs. "127370" -> "1,27,370".
+ */
+function groupIndian(digits: string): string {
+  if (digits.length <= 3) {
+    return digits;
+  }
+
+  const last3 = digits.slice(-3);
+  const rest = digits.slice(0, -3).replace(/\B(?=(\d{2})+(?!\d))/g, ',');
+
+  return `${rest},${last3}`;
+}
+
+/** "12.50" -> "₹12.50", "127370" -> "₹1,27,370.00". Display only; never feed the result
+ * back into arithmetic. */
 export function formatINR(v: string | number): string {
-  return `₹${toMajor(toMinor(v))}`;
+  const major = toMajor(toMinor(v));
+  const isNegative = major.startsWith('-');
+  const [integerPart, fractionPart] = (isNegative ? major.slice(1) : major).split('.');
+
+  return `${isNegative ? '-' : ''}₹${groupIndian(integerPart)}.${fractionPart}`;
 }
