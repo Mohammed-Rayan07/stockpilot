@@ -4,9 +4,21 @@ import { z } from 'zod';
 // the AI executor. Two copies of a validation rule is how the two call paths drift apart
 // and how an authorization hole opens up.
 
+// Bounded to 10 integer digits because products.unit_price/cost_price are
+// numeric(12,2): 12 total digits, 2 of them after the point. A value that passes this
+// regex but has more than 10 integer digits still overflows that column and previously
+// surfaced as an uncaught 500 instead of a clean 422 (confirmed by security review).
 const MONEY = z
   .string()
-  .regex(/^\d+(\.\d{1,2})?$/, 'Must be an amount like 199 or 199.50');
+  .regex(/^\d{1,10}(\.\d{1,2})?$/, 'Must be an amount like 199 or 199.50');
+
+// products.quantity, sales.quantity and stock_movements.delta are all Postgres `integer`
+// (max 2,147,483,647). A value Zod accepted but Postgres rejected previously surfaced as
+// an uncaught 500 (confirmed by security review: a stock adjustment near
+// Number.MAX_SAFE_INTEGER aborted the transaction with a raw "out of range for type
+// integer" error). This ceiling is far beyond any real inventory count and keeps every
+// quantity, and every arithmetic combination of them, comfortably inside that column.
+const MAX_QUANTITY = 100_000_000;
 
 export const registerSchema = z.object({
   email: z.email('Enter a valid email address.'),
@@ -27,8 +39,8 @@ export const createProductSchema = z.object({
   description: z.string().trim().max(2000).optional().nullable(),
   unitPrice: MONEY,
   costPrice: MONEY,
-  quantity: z.number().int().min(0).default(0),
-  reorderThreshold: z.number().int().min(0).default(0),
+  quantity: z.number().int().min(0).max(MAX_QUANTITY).default(0),
+  reorderThreshold: z.number().int().min(0).max(MAX_QUANTITY).default(0),
   supplierId: z.uuid().optional().nullable(),
 });
 
@@ -38,7 +50,7 @@ export const updateProductSchema = z.object({
   description: z.string().trim().max(2000).optional().nullable(),
   unitPrice: MONEY.optional(),
   costPrice: MONEY.optional(),
-  reorderThreshold: z.number().int().min(0).optional(),
+  reorderThreshold: z.number().int().min(0).max(MAX_QUANTITY).optional(),
   supplierId: z.uuid().optional().nullable(),
 });
 
@@ -56,14 +68,19 @@ export const createSupplierSchema = z.object({
 
 export const recordSaleSchema = z.object({
   productId: z.uuid(),
-  quantity: z.number().int().positive('Quantity must be at least 1.'),
+  quantity: z.number().int().positive('Quantity must be at least 1.').max(MAX_QUANTITY),
   unitPrice: MONEY.optional(),
   idempotencyKey: z.string().min(1).max(200).optional(),
 });
 
 export const adjustStockSchema = z.object({
   productId: z.uuid(),
-  delta: z.number().int().refine((v) => v !== 0, 'Adjustment cannot be zero.'),
+  delta: z
+    .number()
+    .int()
+    .min(-MAX_QUANTITY)
+    .max(MAX_QUANTITY)
+    .refine((v) => v !== 0, 'Adjustment cannot be zero.'),
   reason: z.enum(['restock', 'adjustment']),
   note: z.string().trim().max(500).optional().nullable(),
 });
@@ -97,7 +114,7 @@ export const reorderAdviceQuerySchema = z.object({
 export const createPurchaseOrderSchema = z.object({
   supplierId: z.uuid(),
   lines: z
-    .array(z.object({ productId: z.uuid(), quantity: z.number().int().positive() }))
+    .array(z.object({ productId: z.uuid(), quantity: z.number().int().positive().max(MAX_QUANTITY) }))
     .min(1, 'A purchase order needs at least one line.'),
 });
 

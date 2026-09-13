@@ -23,7 +23,14 @@ import { listProducts } from '../services/products';
 // go even if the model hallucinated one -- but the executor also strips it explicitly
 // (§7.4 step 2) rather than relying on that silently.
 
-const MONEY = z.string().regex(/^\d+(\.\d{1,2})?$/, 'Must be an amount like 199 or 199.50');
+// Bounds mirror lib/validation/schemas.ts, kept in sync by hand for the same reason the
+// two schemas below are: Gemini's function-calling schema and this module's own runtime
+// zodSchema are hand-written, not derived from one shared object (see the note above).
+// products.unit_price/cost_price are numeric(12,2) -- 10 integer digits, 2 decimal.
+const MONEY = z.string().regex(/^\d{1,10}(\.\d{1,2})?$/, 'Must be an amount like 199 or 199.50');
+
+// products.quantity and stock_movements.delta are Postgres `integer` (max 2,147,483,647).
+const MAX_QUANTITY = 100_000_000;
 
 export type ToolDefinition<TArgs = Record<string, unknown>> = {
   name: string;
@@ -201,7 +208,7 @@ const recordSaleTool: ToolDefinition<{ productId: string; quantity: number; unit
     },
     zodSchema: z.object({
       productId: z.uuid(),
-      quantity: z.number().int().positive(),
+      quantity: z.number().int().positive().max(MAX_QUANTITY),
       unitPrice: MONEY.optional(),
     }),
     mutating: true,
@@ -235,7 +242,12 @@ const adjustStockTool: ToolDefinition<{
   },
   zodSchema: z.object({
     productId: z.uuid(),
-    delta: z.number().int().refine((v) => v !== 0, 'Adjustment cannot be zero.'),
+    delta: z
+      .number()
+      .int()
+      .min(-MAX_QUANTITY)
+      .max(MAX_QUANTITY)
+      .refine((v) => v !== 0, 'Adjustment cannot be zero.'),
     reason: z.enum(['restock', 'adjustment']),
     note: z.string().trim().max(500).optional(),
   }),
@@ -274,7 +286,7 @@ const createPurchaseOrderDraftTool: ToolDefinition<{
   zodSchema: z.object({
     supplierId: z.uuid(),
     lines: z
-      .array(z.object({ productId: z.uuid(), quantity: z.number().int().positive() }))
+      .array(z.object({ productId: z.uuid(), quantity: z.number().int().positive().max(MAX_QUANTITY) }))
       .min(1),
   }),
   mutating: true,
