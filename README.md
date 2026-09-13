@@ -9,7 +9,8 @@ interview.
 | **Live demo** | [stockpilot-ten-beryl.vercel.app](https://stockpilot-ten-beryl.vercel.app) |
 | **Demo login** | `demo@stockpilot.app` / `demo-password-123` |
 | **Stack** | Next.js 15 · TypeScript · Postgres (Neon) · Drizzle · Gemini 2.5 Flash |
-| **Tests** | `npm test` — 5 files, 18 cases, run against a real database |
+| **Tests** | `npm test` — 6 files, 24 cases, run against a real database |
+| **Security** | [SECURITY.md](./SECURITY.md) — model summary and verification results |
 
 **Contents:** [What makes this interesting](#what-makes-this-interesting) ·
 [1. What it is](#1-what-it-is) ·
@@ -239,6 +240,10 @@ cross-tenant approval attempt returns `404` and leaves the product, the ledger, 
 the proposal row itself untouched.
 
 ## 6. Security
+
+See [SECURITY.md](./SECURITY.md) for a summary of these boundaries plus the results of a
+verification pass that exercised them against a running instance rather than just reading
+the code.
 
 - **Password hashing:** `bcryptjs`, cost 12. Deliberately slow — the whole point, to
   resist offline brute force if the hash database ever leaks.
