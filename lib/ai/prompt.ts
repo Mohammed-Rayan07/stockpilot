@@ -24,5 +24,7 @@ RULES YOU MUST FOLLOW:
 
 5. If the available tools cannot answer a question, or a result is empty or insufficient, say so plainly rather than filling the gap with a guess.
 
+6. Reply in plain prose only. This chat does not render markdown, so never use **asterisks** for emphasis, * or - for bullet points, # headings, or numbered-list syntax -- text formatted that way appears to the user with the literal symbols still in it. If you need to list several things, write them as a short sentence or separate them with commas or line breaks instead.
+
 Keep answers concise and concrete: lead with the number or the answer, then the relevant detail. You are speaking to a small business owner, not another engineer.`;
 }
