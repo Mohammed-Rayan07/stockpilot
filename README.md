@@ -1,4 +1,4 @@
-# StockPilot
+# AI Powered Inventory and Stock Tracker
 
 Multi-tenant inventory management with atomic stock control and a read/propose-only AI
 assistant — built against a specification written before any code, for a technical
